@@ -262,6 +262,93 @@ jobs:
       - uses: actions/upload-artifact@v4
 ```
 
+## Tooling Available to the Agent
+
+The following tools are available in this Claude Code session. Use them — don't
+shell out or do manually what a tool handles better.
+
+### File & Code Tools
+- **Read** — read any file before editing it (required before Write/Edit)
+- **Edit** — surgical edits to existing files, preferred over Write for modifications
+- **Write** — create new files or full rewrites only
+- **Glob** — find files by pattern (e.g. `src/**/*.rs`)
+- **Grep** — search file contents by regex across the codebase
+- **Bash** — run shell commands: `cargo build`, `cargo check`, `cargo fmt`, git, etc.
+
+### Planning & Tracking
+- **TaskCreate / TaskUpdate** — create and track tasks for the current session
+  - Use these to break down each phase into steps
+  - Mark tasks `in_progress` when starting, `completed` when done
+- **EnterPlanMode / ExitPlanMode** — use for planning before writing code on complex tasks
+
+### GitHub MCP
+The `mcp__github__*` tools provide direct GitHub API access without shelling out.
+Prefer these over `gh` CLI for GitHub operations during development:
+
+| Tool | Use case |
+|------|----------|
+| `mcp__github__create_issue` | file bugs, TODOs, known issues |
+| `mcp__github__get_issue` / `list_issues` | check existing issues |
+| `mcp__github__create_pull_request` | open PRs for feature branches |
+| `mcp__github__get_pull_request_status` | check CI on a PR |
+| `mcp__github__push_files` | push file changes directly |
+| `mcp__github__create_or_update_file` | update single files on remote |
+| `mcp__github__search_code` | search the codebase on GitHub |
+| `mcp__github__list_commits` | review recent commit history |
+
+Repo: `karimKandil0/githut`
+
+### Web Tools
+- **WebSearch** — look up crate docs, Rust patterns, ratatui examples
+- **WebFetch** — fetch a specific docs page or crate README
+
+## Agent Workflow Rules
+
+These rules are mandatory. Follow them throughout the entire project.
+
+### Commit after every meaningful change
+Commit frequently and atomically. Every feature, fix, refactor, or new file gets
+its own commit. Do not batch unrelated changes into one commit.
+
+Good commit granularity examples:
+- `feat(auth): implement gh auth token retrieval`
+- `feat(types): add Repo, AppState, SearchResult structs`
+- `feat(ui): render split layout with placeholder panes`
+- `fix(github): handle 401 unauthorized with readable error`
+- `refactor(app): move state transition logic to dedicated method`
+- `chore(flake): add cargo-watch to dev shell`
+
+Commit message format:
+```
+type(scope): short description
+
+optional body explaining why, not what
+```
+
+Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`
+
+### Keep CLAUDE.md up to date
+CLAUDE.md is the source of truth for this project. Update it when:
+- A phase task is completed — check it off
+- A new pattern or decision is established — document it
+- A dependency is added or changed — update the Stack section
+- The project structure changes — update the Project Structure section
+- A bug or gotcha is discovered — add a note so future sessions don't repeat it
+
+Commit CLAUDE.md updates alongside the code they document.
+
+### Before starting any phase task
+1. Read the relevant existing files first
+2. Run `cargo check` to confirm current state compiles
+3. Create a TaskCreate entry for the work
+4. Then write code
+
+### After completing any phase task
+1. Run `cargo check` — must pass
+2. Run `cargo fmt` — must pass
+3. Mark the task completed in CLAUDE.md
+4. Commit
+
 ## Code Style
 
 - No unwrap() in anything but throwaway test code
