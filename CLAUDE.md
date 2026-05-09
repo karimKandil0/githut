@@ -194,6 +194,74 @@ Do NOT suggest `cargo install` for global tools — add to flake.nix buildInputs
 LIBGIT2_SYS_USE_PKG_CONFIG=1 and OPENSSL_NO_VENDOR=1 are set in the shell.
 These are required for git2 and octocrab to link correctly on NixOS.
 
+## Distribution & Installation
+
+### PATH handling
+Package managers handle PATH automatically. Each install method drops the binary
+in a standard location that's already in the user's PATH:
+- cargo install → `~/.cargo/bin`
+- apt/dnf/pacman → `/usr/bin`
+- brew → `/usr/local/bin` or `/opt/homebrew/bin`
+- nix → `/etc/profiles/per-user/$USER/bin` or similar
+
+Users never need to manually set PATH if installing through a package manager.
+
+### Recommended rollout order
+
+1. **crates.io** — `cargo publish` once v0.1 is solid
+   - Users: `cargo install githut`
+   - Zero friction, works on Linux/Mac/Windows
+   - Requires Rust installed (fine for target audience)
+
+2. **GitHub Releases + binaries** — set up GitHub Actions CI to cross-compile
+   - Targets: `x86_64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`
+   - Attach to release tags automatically
+   - Users download binary, put it in PATH manually or via install script
+   - Use `cargo-cross` or `cross` for cross-compilation in CI
+
+3. **AUR** — write a `PKGBUILD` (source or bin variant)
+   - `githut` = builds from source via cargo
+   - `githut-bin` = downloads prebuilt binary from GitHub Releases
+   - Submit to AUR, maintain it or let a volunteer take over
+
+4. **nixpkgs** — submit PR once project is polished enough to get merged
+   - High bar: must be stable, well-documented, useful to general public
+   - Once merged: `nix-env -iA nixpkgs.githut` or `nix profile install nixpkgs#githut`
+   - Flake users: already works via `nix run github:karimKandil0/githut`
+
+5. **Homebrew** — write a Formula or tap once Mac users request it
+   - Either submit to `homebrew-core` (high bar, needs stable releases)
+   - Or host own tap: `brew tap karimKandil0/tap && brew install githut`
+
+6. **Debian/RPM** — lowest priority, most bureaucratic
+   - `.deb` for apt, `.rpm` for dnf
+   - Most small projects skip official repos and just offer binary downloads
+   - Nix and cargo cover most Linux users who care about terminal tools
+
+### GitHub Actions CI skeleton (for when you set it up)
+
+```yaml
+# .github/workflows/release.yml
+on:
+  push:
+    tags: ['v*']
+jobs:
+  build:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+```
+
 ## Code Style
 
 - No unwrap() in anything but throwaway test code
