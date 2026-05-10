@@ -186,10 +186,23 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
             app.file_content = None;
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.file_next();
+            if app.file_content.is_some() {
+                app.file_scroll = app.file_scroll.saturating_add(1);
+            } else {
+                app.file_next();
+            }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.file_prev();
+            if app.file_content.is_some() {
+                app.file_scroll = app.file_scroll.saturating_sub(1);
+            } else {
+                app.file_prev();
+            }
+        }
+        KeyCode::Char('H') => {
+            // close preview, back to list nav
+            app.file_content = None;
+            app.file_scroll = 0;
         }
         KeyCode::Char('h') => {
             // go up one directory

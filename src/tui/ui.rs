@@ -176,7 +176,11 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let hints = if matches!(app.state, AppState::FileBrowsing) {
-        " j/k:nav  l:enter  h:up  Esc:back  q:quit"
+        if app.file_content.is_some() {
+            " j/k:scroll  H:close preview  h:up  Esc:back  q:quit"
+        } else {
+            " j/k:nav  l:enter  h:up  Esc:back  q:quit"
+        }
     } else {
         " /:search  j/k:nav  Enter:readme  t:files  c:clone  o:browser  ?:help  q:quit"
     };
