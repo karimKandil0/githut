@@ -34,7 +34,7 @@ githut/
     api/
       mod.rs         -- re-exports GithubClient
       auth.rs        -- shells out to `gh auth token` to get token
-      client.rs      -- GitHub API calls (search, readme) via octocrab
+      client.rs      -- GitHub API calls (search, readme, contents, file) via octocrab
     tui/
       mod.rs
       ui.rs          -- all ratatui rendering logic
@@ -49,39 +49,54 @@ githut/
 
 ```
 +----------------------------------+-----------------------------+
-| [ search: ______________ ] [lang] |                             |
+| [ search: ______________ ]        |                             |
 +----------------------------------+  README preview              |
-| owner/repo-name      Rust  4.2k  |  (rendered markdown via      |
-| short description here...        |   termimad)                  |
+| owner/repo-name      Rust  4.2k  |  (rendered markdown)        |
+| short description here...        |                             |
 | > owner/selected-repo  Go  891   |                             |
 |   description of selected...     |                             |
-|                                  |                             |
 +----------------------------------+-----------------------------+
- c:clone  f:fork  s:star  o:browser  /:search  tab:filter  q:quit
+ /:search  j/k:nav  J/K:scroll  l:files  c:clone  o:browser  q:quit
 ```
 
-Left pane: scrollable results list (50% width)
-Right pane: README of currently highlighted repo (50% width)
+Left pane: search bar + scrollable results list (50% width)
+Right pane: README auto-loads on selection (50% width), debounced 300ms
 Bottom bar: keybindings hint
-Top: search input + optional language filter
+
+File browser mode (activated with `l`):
+```
++----------------------------------+-----------------------------+
+| Files — owner/repo/src/          |  file content / preview     |
++----------------------------------+                             |
+| ▶ api/                           |                             |
+| ▶ tui/                           |                             |
+|   main.rs                        |                             |
+| > app.rs                         |                             |
++----------------------------------+-----------------------------+
+ j/k:nav  J/K:scroll preview  l:open  h:up/back  Esc:back  q:quit
+```
 
 ## Keybindings
 
-| Key       | Action                              |
-|-----------|-------------------------------------|
-| /         | Focus search input                  |
-| Enter     | Confirm search / select             |
-| j / k     | Move down / up in results           |
-| tab       | Cycle language filter               |
-| c         | Clone selected repo (prompts path)  |
-| C         | Sparse-clone (prompts path + dirs)  |
-| f         | Fork selected repo                  |
-| s         | Star / unstar selected repo         |
-| o         | Open selected repo in browser       |
-| r         | Refresh / re-fetch results          |
-| ?         | Toggle help overlay                 |
-| Esc       | Clear input / close overlay         |
-| q         | Quit                                |
+Controls are consistent across all modes.
+
+| Key         | Action                                        |
+|-------------|-----------------------------------------------|
+| /           | Focus search input                            |
+| Enter       | Confirm search                                |
+| j / k       | Navigate list (repos or files)                |
+| J / K       | Scroll preview pane (readme or file content)  |
+| l / Enter   | Open file browser / enter dir / preview file  |
+| h           | Go up one dir; at root, back to repo list     |
+| Esc         | Back / close overlay                          |
+| c           | Clone selected repo (prompts path)            |
+| C           | Sparse-clone (prompts path + dirs)            |
+| f           | Fork selected repo                            |
+| s           | Star / unstar selected repo                   |
+| o           | Open selected repo in browser                 |
+| r           | Refresh / re-fetch results                    |
+| ?           | Toggle help overlay                           |
+| q           | Quit                                          |
 
 ## Auth
 
@@ -105,6 +120,8 @@ All calls go through octocrab. Key endpoints:
 
 - Search repos: `GET /search/repositories?q=...`
 - Get README: `GET /repos/{owner}/{repo}/readme`
+- Get contents (dir listing): `GET /repos/{owner}/{repo}/contents/{path}`
+- Get file content: `GET /repos/{owner}/{repo}/contents/{path}` (single file)
 - Fork repo: `POST /repos/{owner}/{repo}/forks`
 - Star repo: `PUT /user/starred/{owner}/{repo}`
 - Unstar repo: `DELETE /user/starred/{owner}/{repo}`
@@ -133,15 +150,20 @@ Sparse clone flow:
 enum AppState {
     Searching,        // user is typing in search bar
     Browsing,         // navigating results list
-    Previewing,       // scrolling README pane (focused)
+    FileBrowsing,     // browsing repo file tree
     Cloning,          // clone path input prompt
-    SparseCloning,    // sparse-clone path + dirs prompt
+    SparseCloning,    // sparse-clone path + dirs prompt (future)
+    Previewing,       // reserved (unused currently)
     Error(String),    // showing error overlay
     Help,             // showing help overlay
 }
 ```
 
 State transitions are handled in events.rs based on keypress + current state.
+
+README auto-loads with a 300ms debounce — `j/k` updates selection instantly,
+fetch fires after 300ms idle. `readme_pending: Option<Instant>` in App tracks this.
+Checked in the `run_app` loop in main.rs, not in the event handler.
 
 ## Phases
 
@@ -155,7 +177,7 @@ Goal: working search + browse + clone. Shippable v0.1.
 - [x] ui.rs: split layout, results list, search bar, keybindings bar
 - [x] events.rs: keyboard loop, j/k navigation, / for search
 - [x] github.rs: fetch README for selected repo
-- [x] ui.rs: README preview pane with termimad rendering
+- [x] ui.rs: README preview pane with pulldown-cmark rendering
 - [x] git.rs: basic clone on `c` keypress with path prompt
 
 ### Phase 2 — GitHub Actions
@@ -164,8 +186,8 @@ Goal: fork, star, open browser.
 - [ ] github.rs: fork endpoint
 - [ ] github.rs: star / unstar + check if starred
 - [ ] ui.rs: star indicator on repo in list (show if starred)
-- [ ] events.rs: f, s, o keybindings
-- [ ] open crate: browser open on `o`
+- [ ] events.rs: f, s keybindings
+- [x] open crate: browser open on `o`
 
 ### Phase 3 — Power Features
 Goal: sparse clone, language filter, better UX.
