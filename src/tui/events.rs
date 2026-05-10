@@ -2,9 +2,9 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::time::Duration;
 
+use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
-use crate::github::GithubClient;
 use crate::types::AppState;
 
 /// Returns true if the app should quit.
@@ -27,7 +27,6 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::Previewing => handle_previewing(app, key.code),
         AppState::Cloning => handle_cloning(app, key.code).await,
         AppState::Error(_) | AppState::Help => {
-            // any key dismisses
             app.state = AppState::Browsing;
             Ok(false)
         }

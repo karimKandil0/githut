@@ -1,10 +1,8 @@
+mod api;
 mod app;
-mod auth;
-mod events;
 mod git;
-mod github;
+mod tui;
 mod types;
-mod ui;
 
 use anyhow::Result;
 use crossterm::{
@@ -16,17 +14,16 @@ use std::io;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let token = auth::get_token().await.unwrap_or_else(|e| {
+    let token = api::auth::get_token().await.unwrap_or_else(|e| {
         eprintln!("auth error: {}", e);
         std::process::exit(1);
     });
 
-    let client = github::GithubClient::new(&token).unwrap_or_else(|e| {
+    let client = api::GithubClient::new(&token).unwrap_or_else(|e| {
         eprintln!("client init error: {}", e);
         std::process::exit(1);
     });
 
-    // Init terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -37,7 +34,6 @@ async fn main() -> Result<()> {
 
     let result = run_app(&mut terminal, &mut app, &client).await;
 
-    // Always restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -53,12 +49,12 @@ async fn main() -> Result<()> {
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut app::App,
-    client: &github::GithubClient,
+    client: &api::GithubClient,
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| ui::draw(f, app))?;
+        terminal.draw(|f| tui::ui::draw(f, app))?;
 
-        if events::handle_events(app, client).await? {
+        if tui::events::handle_events(app, client).await? {
             break;
         }
     }
