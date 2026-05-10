@@ -157,7 +157,7 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
             let msg = if app.loading {
                 "Loading README..."
             } else if app.selected_repo().is_some() {
-                "Press Enter to load README"
+                "Loading README..."
             } else {
                 "Search for repos to get started"
             };
@@ -176,13 +176,9 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let hints = if matches!(app.state, AppState::FileBrowsing) {
-        if app.file_content.is_some() {
-            " j/k:scroll  H:close preview  h:up  Esc:back  q:quit"
-        } else {
-            " j/k:nav  l:enter  h:up  Esc:back  q:quit"
-        }
+        " j/k:nav  J/K:scroll preview  l:open  h:up/back  Esc:back  q:quit"
     } else {
-        " /:search  j/k:nav  Enter:readme  t:files  c:clone  o:browser  ?:help  q:quit"
+        " /:search  j/k:nav  J/K:scroll readme  l:files  c:clone  o:browser  ?:help  q:quit"
     };
     let msg = app.status_msg.as_deref().unwrap_or(hints);
     let para = Paragraph::new(msg).style(Style::default().fg(Color::DarkGray));
@@ -298,15 +294,16 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
     f.render_widget(Clear, popup);
     let help_text = "\
  /:search        focus search input
- Enter           confirm search / load readme
- j/k             navigate results
+ Enter           confirm search
+ j/k             navigate list
+ J/K             scroll preview pane
+ l / Enter       open file browser for selected repo
+ h               go up / back
  c               clone selected repo
- s               star/unstar repo
- f               fork repo
  o               open in browser
  r               refresh results
  ?               toggle this help
- Esc             clear input / close overlay
+ Esc             back / close overlay
  q               quit";
     let block = Block::default()
         .borders(Borders::ALL)

@@ -24,14 +24,13 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
     match &app.state.clone() {
         AppState::Searching => handle_searching(app, client, key.code).await,
         AppState::Browsing => handle_browsing(app, client, key.code).await,
-        AppState::Previewing => handle_previewing(app, key.code),
         AppState::FileBrowsing => handle_file_browsing(app, client, key.code).await,
         AppState::Cloning => handle_cloning(app, key.code).await,
         AppState::Error(_) | AppState::Help => {
             app.state = AppState::Browsing;
             Ok(false)
         }
-        AppState::SparseCloning => Ok(false),
+        AppState::Previewing | AppState::SparseCloning => Ok(false),
     }
 }
 
@@ -64,9 +63,18 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         }
         KeyCode::Char('j') | KeyCode::Down => {
             app.next();
+            fetch_readme(app, client).await;
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.prev();
+            fetch_readme(app, client).await;
+        }
+        // J/K scroll the readme preview
+        KeyCode::Char('J') => {
+            app.readme_scroll = app.readme_scroll.saturating_add(1);
+        }
+        KeyCode::Char('K') => {
+            app.readme_scroll = app.readme_scroll.saturating_sub(1);
         }
         KeyCode::Char('r') => {
             if !app.search_query.is_empty() {
@@ -76,7 +84,21 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         KeyCode::Char('?') => {
             app.state = AppState::Help;
         }
-        KeyCode::Char('t') => {
+        KeyCode::Char('c') => {
+            if app.selected_repo().is_some() {
+                app.clone_path_input.clear();
+                app.state = AppState::Cloning;
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(repo) = app.selected_repo() {
+                let url = repo.html_url.clone();
+                if let Err(e) = open::that(&url) {
+                    app.set_error(format!("failed to open browser: {}", e));
+                }
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(repo) = app.selected_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
@@ -94,85 +116,6 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 app.loading = false;
             }
         }
-        KeyCode::Char('c') => {
-            if app.selected_repo().is_some() {
-                app.clone_path_input.clear();
-                app.state = AppState::Cloning;
-            }
-        }
-        KeyCode::Char('o') => {
-            if let Some(repo) = app.selected_repo() {
-                let url = repo.html_url.clone();
-                if let Err(e) = open::that(&url) {
-                    app.set_error(format!("failed to open browser: {}", e));
-                }
-            }
-        }
-        KeyCode::Enter => {
-            if let Some(repo) = app.selected_repo() {
-                let owner = repo.owner.clone();
-                let name = repo.name.clone();
-                app.loading = true;
-                app.readme_content = None;
-                match client.get_readme(&owner, &name).await {
-                    Ok(md) => {
-                        app.readme_content = Some(md);
-                        app.readme_scroll = 0;
-                        app.state = AppState::Previewing;
-                    }
-                    Err(e) => app.set_error(format!("readme fetch failed: {}", e)),
-                }
-                app.loading = false;
-            }
-        }
-        _ => {}
-    }
-    Ok(false)
-}
-
-fn handle_previewing(app: &mut App, code: KeyCode) -> Result<bool> {
-    match code {
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.state = AppState::Browsing;
-        }
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.readme_scroll = app.readme_scroll.saturating_add(1);
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.readme_scroll = app.readme_scroll.saturating_sub(1);
-        }
-        _ => {}
-    }
-    Ok(false)
-}
-
-async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
-    match code {
-        KeyCode::Esc => {
-            app.state = AppState::Browsing;
-        }
-        KeyCode::Backspace => {
-            app.clone_path_input.pop();
-        }
-        KeyCode::Enter => {
-            if let Some(repo) = app.selected_repo() {
-                let url = repo.clone_url.clone();
-                let path = app.clone_path_input.trim().to_string();
-                if path.is_empty() {
-                    app.set_error("clone path cannot be empty");
-                    return Ok(false);
-                }
-                app.set_status(format!("cloning {}...", repo.full_name));
-                app.state = AppState::Browsing;
-                match git::clone_repo(&url, &path) {
-                    Ok(()) => app.set_status(format!("cloned to {}", path)),
-                    Err(e) => app.set_error(format!("clone failed: {}", e)),
-                }
-            }
-        }
-        KeyCode::Char(c) => {
-            app.clone_path_input.push(c);
-        }
         _ => {}
     }
     Ok(false)
@@ -181,47 +124,45 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
 async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
     match code {
         KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') if app.file_path_stack.is_empty() => {
+            // at root — go back to repo browsing
+            app.state = AppState::Browsing;
+            app.file_content = None;
+        }
+        KeyCode::Char('h') => {
+            // go up one directory
+            app.file_path_stack.pop();
+            if let Some(repo) = app.selected_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let path = app.current_file_path().to_string();
+                app.file_entries.clear();
+                app.file_selected = 0;
+                app.file_content = None;
+                app.loading = true;
+                match client.get_contents(&owner, &name, &path).await {
+                    Ok(entries) => app.file_entries = entries,
+                    Err(e) => app.set_error(format!("failed to load files: {}", e)),
+                }
+                app.loading = false;
+            }
+        }
         KeyCode::Esc => {
             app.state = AppState::Browsing;
             app.file_content = None;
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.file_content.is_some() {
-                app.file_scroll = app.file_scroll.saturating_add(1);
-            } else {
-                app.file_next();
-            }
+            app.file_next();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.file_content.is_some() {
-                app.file_scroll = app.file_scroll.saturating_sub(1);
-            } else {
-                app.file_prev();
-            }
+            app.file_prev();
         }
-        KeyCode::Char('H') => {
-            // close preview, back to list nav
-            app.file_content = None;
-            app.file_scroll = 0;
+        // J/K scroll the file preview
+        KeyCode::Char('J') => {
+            app.file_scroll = app.file_scroll.saturating_add(1);
         }
-        KeyCode::Char('h') => {
-            // go up one directory
-            if app.file_path_stack.pop().is_some() {
-                if let Some(repo) = app.selected_repo() {
-                    let owner = repo.owner.clone();
-                    let name = repo.name.clone();
-                    let path = app.current_file_path().to_string();
-                    app.file_entries.clear();
-                    app.file_selected = 0;
-                    app.file_content = None;
-                    app.loading = true;
-                    match client.get_contents(&owner, &name, &path).await {
-                        Ok(entries) => app.file_entries = entries,
-                        Err(e) => app.set_error(format!("failed to load files: {}", e)),
-                    }
-                    app.loading = false;
-                }
-            }
+        KeyCode::Char('K') => {
+            app.file_scroll = app.file_scroll.saturating_sub(1);
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(entry) = app.selected_entry().cloned() {
@@ -266,6 +207,53 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
     Ok(false)
 }
 
+async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Backspace => {
+            app.clone_path_input.pop();
+        }
+        KeyCode::Enter => {
+            if let Some(repo) = app.selected_repo() {
+                let url = repo.clone_url.clone();
+                let path = app.clone_path_input.trim().to_string();
+                if path.is_empty() {
+                    app.set_error("clone path cannot be empty");
+                    return Ok(false);
+                }
+                app.set_status(format!("cloning {}...", repo.full_name));
+                app.state = AppState::Browsing;
+                match git::clone_repo(&url, &path) {
+                    Ok(()) => app.set_status(format!("cloned to {}", path)),
+                    Err(e) => app.set_error(format!("clone failed: {}", e)),
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.clone_path_input.push(c);
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn fetch_readme(app: &mut App, client: &GithubClient) {
+    if let Some(repo) = app.selected_repo() {
+        let owner = repo.owner.clone();
+        let name = repo.name.clone();
+        app.readme_content = None;
+        app.readme_scroll = 0;
+        app.loading = true;
+        match client.get_readme(&owner, &name).await {
+            Ok(md) => app.readme_content = Some(md),
+            Err(_) => {} // silently ignore — no readme or rate limit
+        }
+        app.loading = false;
+    }
+}
+
 async fn do_search(app: &mut App, client: &GithubClient) {
     let query = app.search_query.clone();
     let lang = app.language_filter.clone();
@@ -278,6 +266,8 @@ async fn do_search(app: &mut App, client: &GithubClient) {
         Ok(result) => {
             app.results = result.repos;
             app.set_status(format!("{} results", result.total_count));
+            // auto-load readme for first result
+            fetch_readme(app, client).await;
         }
         Err(e) => app.set_error(format!("search failed: {}", e)),
     }
