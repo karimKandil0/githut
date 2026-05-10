@@ -1,13 +1,13 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
-use termimad::MadSkin;
 
 use crate::app::App;
+use crate::markdown;
 use crate::types::AppState;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -146,20 +146,24 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let content = match &app.readme_content {
-        Some(md) => render_markdown(md, inner.width as usize),
+    let text: Text = match &app.readme_content {
+        Some(md) => Text::from(markdown::render(md)),
         None => {
-            if app.loading {
-                "Loading README...".to_string()
+            let msg = if app.loading {
+                "Loading README..."
             } else if app.selected_repo().is_some() {
-                "Press Enter to load README".to_string()
+                "Press Enter to load README"
             } else {
-                "Search for repos to get started".to_string()
-            }
+                "Search for repos to get started"
+            };
+            Text::from(Line::from(Span::styled(
+                msg,
+                Style::default().fg(Color::DarkGray),
+            )))
         }
     };
 
-    let para = Paragraph::new(content)
+    let para = Paragraph::new(text)
         .wrap(Wrap { trim: false })
         .scroll((app.readme_scroll, 0));
     f.render_widget(para, inner);
@@ -244,9 +248,4 @@ fn format_stars(n: u64) -> String {
     } else {
         n.to_string()
     }
-}
-
-fn render_markdown(md: &str, _width: usize) -> String {
-    let skin = MadSkin::default();
-    skin.text(md, None).to_string()
 }

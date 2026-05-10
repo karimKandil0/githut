@@ -40,7 +40,7 @@ urlencoding = "2"
 base64 = "0.22"
 
 # Markdown rendering in preview pane
-termimad = "0.30"
+pulldown-cmark = { version = "0.12", default-features = false }
 
 [profile.release]
 opt-level = 3

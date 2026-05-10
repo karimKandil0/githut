@@ -16,7 +16,7 @@ the terminal, keyboard-driven.
 - Async: tokio
 - GitHub API: octocrab
 - Git operations: git2 (libgit2 bindings)
-- Markdown rendering: termimad
+- Markdown rendering: pulldown-cmark (custom ratatui renderer in src/markdown.rs)
 - Error handling: anyhow
 - Serialization: serde + serde_json
 - URL encoding: urlencoding
@@ -39,6 +39,7 @@ githut/
       mod.rs
       ui.rs          -- all ratatui rendering logic
       events.rs      -- keyboard input handling, event loop
+    markdown.rs      -- custom markdown → Vec<Line> renderer (pulldown-cmark)
   Cargo.toml
   flake.nix
   CLAUDE.md
