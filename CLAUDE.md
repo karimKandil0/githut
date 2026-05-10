@@ -180,13 +180,13 @@ Goal: working search + browse + clone. Shippable v0.1.
 - [x] ui.rs: README preview pane with pulldown-cmark rendering
 - [x] git.rs: basic clone on `c` keypress with path prompt
 
-### Phase 2 — GitHub Actions
+### Phase 2 — GitHub Actions (DONE)
 Goal: fork, star, open browser.
 
-- [ ] github.rs: fork endpoint
-- [ ] github.rs: star / unstar + check if starred
-- [ ] ui.rs: star indicator on repo in list (show if starred)
-- [ ] events.rs: f, s keybindings
+- [x] github.rs: fork endpoint
+- [x] github.rs: star / unstar + check if starred
+- [x] ui.rs: star indicator on repo in list (★ when starred)
+- [x] events.rs: f, s keybindings
 - [x] open crate: browser open on `o`
 
 ### Phase 3 — Power Features
