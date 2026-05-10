@@ -98,6 +98,7 @@ fn draw_results(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|repo| {
             let lang = repo.language.as_deref().unwrap_or("—");
             let stars = format_stars(repo.stargazers_count);
+            let is_starred = app.starred.contains(&repo.full_name);
             let desc = repo
                 .description
                 .as_deref()
@@ -106,9 +107,16 @@ fn draw_results(f: &mut Frame, app: &mut App, area: Rect) {
                 .take(60)
                 .collect::<String>();
 
+            let star_span = if is_starred {
+                Span::styled("★ ", Style::default().fg(Color::Yellow))
+            } else {
+                Span::styled("  ", Style::default())
+            };
+
             let line1 = Line::from(vec![
+                star_span,
                 Span::styled(
-                    format!("{:<40}", repo.full_name),
+                    format!("{:<38}", repo.full_name),
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -188,6 +196,8 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("j/k", "nav"),
             ("J/K", "scroll readme"),
             ("l", "browse files"),
+            ("s", "star/unstar"),
+            ("f", "fork"),
             ("c", "clone"),
             ("o", "browser"),
             ("r", "refresh"),

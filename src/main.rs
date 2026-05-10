@@ -59,16 +59,23 @@ async fn run_app(
             break;
         }
 
-        // debounced readme fetch — fires 300ms after last j/k
+        // debounced fetch — fires 300ms after last j/k
         if app.take_readme_pending() {
             if let Some(repo) = app.selected_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
+                let full_name = repo.full_name.clone();
                 app.loading = true;
                 terminal.draw(|f| tui::ui::draw(f, app))?;
-                match client.get_readme(&owner, &name).await {
-                    Ok(md) => app.readme_content = Some(md),
-                    Err(_) => {}
+                let (readme, starred) = tokio::join!(
+                    client.get_readme(&owner, &name),
+                    client.is_starred(&owner, &name),
+                );
+                if let Ok(md) = readme {
+                    app.readme_content = Some(md);
+                }
+                if starred {
+                    app.starred.insert(full_name);
                 }
                 app.loading = false;
             }

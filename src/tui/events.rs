@@ -98,6 +98,42 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 }
             }
         }
+        KeyCode::Char('s') => {
+            if let Some(repo) = app.selected_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let full_name = repo.full_name.clone();
+                let already = app.starred.contains(&full_name);
+                if already {
+                    match client.unstar(&owner, &name).await {
+                        Ok(()) => {
+                            app.starred.remove(&full_name);
+                            app.set_status(format!("unstarred {}", full_name));
+                        }
+                        Err(e) => app.set_error(format!("unstar failed: {}", e)),
+                    }
+                } else {
+                    match client.star(&owner, &name).await {
+                        Ok(()) => {
+                            app.starred.insert(full_name.clone());
+                            app.set_status(format!("starred {}", full_name));
+                        }
+                        Err(e) => app.set_error(format!("star failed: {}", e)),
+                    }
+                }
+            }
+        }
+        KeyCode::Char('f') => {
+            if let Some(repo) = app.selected_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let full_name = repo.full_name.clone();
+                match client.fork(&owner, &name).await {
+                    Ok(()) => app.set_status(format!("forked {} — check your GitHub", full_name)),
+                    Err(e) => app.set_error(format!("fork failed: {}", e)),
+                }
+            }
+        }
         KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(repo) = app.selected_repo() {
                 let owner = repo.owner.clone();

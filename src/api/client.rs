@@ -167,6 +167,43 @@ impl GithubClient {
         Err(anyhow!("could not decode file content"))
     }
 
+    pub async fn is_starred(&self, owner: &str, repo: &str) -> bool {
+        self.inner
+            .get::<serde_json::Value, _, _>(
+                format!("/user/starred/{}/{}", owner, repo),
+                None::<&()>,
+            )
+            .await
+            .is_ok()
+    }
+
+    pub async fn star(&self, owner: &str, repo: &str) -> Result<()> {
+        self.inner
+            ._put(format!("/user/starred/{}/{}", owner, repo), None::<&()>)
+            .await
+            .context("star request failed")?;
+        Ok(())
+    }
+
+    pub async fn unstar(&self, owner: &str, repo: &str) -> Result<()> {
+        self.inner
+            ._delete(format!("/user/starred/{}/{}", owner, repo), None::<&()>)
+            .await
+            .context("unstar request failed")?;
+        Ok(())
+    }
+
+    pub async fn fork(&self, owner: &str, repo: &str) -> Result<()> {
+        self.inner
+            ._post(
+                format!("/repos/{}/{}/forks", owner, repo),
+                Some(&serde_json::json!({})),
+            )
+            .await
+            .context("fork request failed")?;
+        Ok(())
+    }
+
     pub async fn get_readme(&self, owner: &str, repo: &str) -> Result<String> {
         let response: ReadmeResponse = self
             .inner

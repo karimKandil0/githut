@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::types::{AppState, FileEntry, Repo};
@@ -20,6 +21,7 @@ pub struct App {
     pub file_content: Option<String>,
     pub file_scroll: u16,
     pub readme_pending: Option<Instant>,
+    pub starred: HashSet<String>, // full_name of starred repos
 }
 
 impl App {
@@ -41,6 +43,7 @@ impl App {
             file_content: None,
             file_scroll: 0,
             readme_pending: None,
+            starred: HashSet::new(),
         }
     }
 
