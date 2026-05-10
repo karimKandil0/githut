@@ -58,6 +58,21 @@ async fn run_app(
         if tui::events::handle_events(app, client).await? {
             break;
         }
+
+        // debounced readme fetch — fires 300ms after last j/k
+        if app.take_readme_pending() {
+            if let Some(repo) = app.selected_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.loading = true;
+                terminal.draw(|f| tui::ui::draw(f, app))?;
+                match client.get_readme(&owner, &name).await {
+                    Ok(md) => app.readme_content = Some(md),
+                    Err(_) => {}
+                }
+                app.loading = false;
+            }
+        }
     }
     Ok(())
 }

@@ -2,6 +2,8 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::time::Duration;
 
+use std::time::Instant;
+
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
@@ -63,11 +65,9 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         }
         KeyCode::Char('j') | KeyCode::Down => {
             app.next();
-            fetch_readme(app, client).await;
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.prev();
-            fetch_readme(app, client).await;
         }
         // J/K scroll the readme preview
         KeyCode::Char('J') => {
@@ -239,21 +239,6 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
     Ok(false)
 }
 
-async fn fetch_readme(app: &mut App, client: &GithubClient) {
-    if let Some(repo) = app.selected_repo() {
-        let owner = repo.owner.clone();
-        let name = repo.name.clone();
-        app.readme_content = None;
-        app.readme_scroll = 0;
-        app.loading = true;
-        match client.get_readme(&owner, &name).await {
-            Ok(md) => app.readme_content = Some(md),
-            Err(_) => {} // silently ignore — no readme or rate limit
-        }
-        app.loading = false;
-    }
-}
-
 async fn do_search(app: &mut App, client: &GithubClient) {
     let query = app.search_query.clone();
     let lang = app.language_filter.clone();
@@ -266,8 +251,7 @@ async fn do_search(app: &mut App, client: &GithubClient) {
         Ok(result) => {
             app.results = result.repos;
             app.set_status(format!("{} results", result.total_count));
-            // auto-load readme for first result
-            fetch_readme(app, client).await;
+            app.readme_pending = Some(Instant::now());
         }
         Err(e) => app.set_error(format!("search failed: {}", e)),
     }

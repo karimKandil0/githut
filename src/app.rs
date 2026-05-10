@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::types::{AppState, FileEntry, Repo};
 
 pub struct App {
@@ -17,6 +19,7 @@ pub struct App {
     pub file_path_stack: Vec<String>,
     pub file_content: Option<String>,
     pub file_scroll: u16,
+    pub readme_pending: Option<Instant>,
 }
 
 impl App {
@@ -37,6 +40,7 @@ impl App {
             file_path_stack: Vec::new(),
             file_content: None,
             file_scroll: 0,
+            readme_pending: None,
         }
     }
 
@@ -47,6 +51,7 @@ impl App {
         self.selected = (self.selected + 1) % self.results.len();
         self.readme_content = None;
         self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
     }
 
     pub fn prev(&mut self) {
@@ -60,6 +65,17 @@ impl App {
         }
         self.readme_content = None;
         self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
+    }
+
+    pub fn take_readme_pending(&mut self) -> bool {
+        if let Some(t) = self.readme_pending {
+            if t.elapsed().as_millis() >= 300 {
+                self.readme_pending = None;
+                return true;
+            }
+        }
+        false
     }
 
     pub fn selected_repo(&self) -> Option<&Repo> {
