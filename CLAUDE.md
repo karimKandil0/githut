@@ -29,12 +29,16 @@ githut/
   src/
     main.rs          -- entrypoint, boots tokio runtime, initializes terminal, runs app
     app.rs           -- App struct, central state machine
-    ui.rs            -- all ratatui rendering logic
-    events.rs        -- keyboard input handling, event loop
-    github.rs        -- GitHub API calls (search, fork, star, get readme)
-    git.rs           -- local git operations (clone, sparse-clone)
-    auth.rs          -- auth: shells out to `gh auth token` to get token
     types.rs         -- shared types (Repo, SearchResult, AppState, etc.)
+    git.rs           -- local git operations (clone, sparse-clone)
+    api/
+      mod.rs         -- re-exports GithubClient
+      auth.rs        -- shells out to `gh auth token` to get token
+      client.rs      -- GitHub API calls (search, readme) via octocrab
+    tui/
+      mod.rs
+      ui.rs          -- all ratatui rendering logic
+      events.rs      -- keyboard input handling, event loop
   Cargo.toml
   flake.nix
   CLAUDE.md
