@@ -19,6 +19,8 @@ the terminal, keyboard-driven.
 - Markdown rendering: termimad
 - Error handling: anyhow
 - Serialization: serde + serde_json
+- URL encoding: urlencoding
+- Base64 decoding: base64
 
 ## Project Structure
 
@@ -138,18 +140,18 @@ State transitions are handled in events.rs based on keypress + current state.
 
 ## Phases
 
-### Phase 1 — Core (current focus)
+### Phase 1 — Core (DONE)
 Goal: working search + browse + clone. Shippable v0.1.
 
-- [ ] auth.rs: `gh auth token` integration, error if missing
-- [ ] github.rs: search repos, return Vec<Repo>
-- [ ] types.rs: Repo struct, AppState enum, SearchResult
-- [ ] app.rs: App struct with state, results, selected index, search query
-- [ ] ui.rs: split layout, results list, search bar, keybindings bar
-- [ ] events.rs: keyboard loop, j/k navigation, / for search
-- [ ] github.rs: fetch README for selected repo
-- [ ] ui.rs: README preview pane with termimad rendering
-- [ ] git.rs: basic clone on `c` keypress with path prompt
+- [x] auth.rs: `gh auth token` integration, error if missing
+- [x] github.rs: search repos, return Vec<Repo>
+- [x] types.rs: Repo struct, AppState enum, SearchResult
+- [x] app.rs: App struct with state, results, selected index, search query
+- [x] ui.rs: split layout, results list, search bar, keybindings bar
+- [x] events.rs: keyboard loop, j/k navigation, / for search
+- [x] github.rs: fetch README for selected repo
+- [x] ui.rs: README preview pane with termimad rendering
+- [x] git.rs: basic clone on `c` keypress with path prompt
 
 ### Phase 2 — GitHub Actions
 Goal: fork, star, open browser.
@@ -310,22 +312,14 @@ These rules are mandatory. Follow them throughout the entire project.
 Commit frequently and atomically. Every feature, fix, refactor, or new file gets
 its own commit. Do not batch unrelated changes into one commit.
 
-Good commit granularity examples:
-- `feat(auth): implement gh auth token retrieval`
-- `feat(types): add Repo, AppState, SearchResult structs`
-- `feat(ui): render split layout with placeholder panes`
-- `fix(github): handle 401 unauthorized with readable error`
-- `refactor(app): move state transition logic to dedicated method`
-- `chore(flake): add cargo-watch to dev shell`
-
 Commit message format:
 ```
-type(scope): short description
-
-optional body explaining why, not what
+type: short description
 ```
 
 Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`
+
+Keep it short. No body. No scope suffix unless genuinely useful.
 
 ### Keep CLAUDE.md up to date
 CLAUDE.md is the source of truth for this project. Update it when:
