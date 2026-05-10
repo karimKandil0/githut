@@ -33,6 +33,12 @@ open = "5"
 # Error handling
 anyhow = "1"
 
+# URL encoding for search queries
+urlencoding = "2"
+
+# Base64 decoding for readme content
+base64 = "0.22"
+
 # Markdown rendering in preview pane
 termimad = "0.30"
 
