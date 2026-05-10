@@ -175,13 +175,57 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let hints = if matches!(app.state, AppState::FileBrowsing) {
-        " j/k:nav  J/K:scroll preview  l:open  h:up/back  Esc:back  q:quit"
-    } else {
-        " /:search  j/k:nav  J/K:scroll readme  l:files  c:clone  o:browser  ?:help  q:quit"
+    if let Some(msg) = &app.status_msg {
+        let para = Paragraph::new(msg.as_str()).style(Style::default().fg(Color::Yellow));
+        f.render_widget(para, area);
+        return;
+    }
+
+    let pairs: &[(&str, &str)] = match &app.state {
+        AppState::Searching => &[("Enter", "search"), ("Esc", "cancel")],
+        AppState::Browsing => &[
+            ("/", "search"),
+            ("j/k", "nav"),
+            ("J/K", "scroll readme"),
+            ("l", "browse files"),
+            ("c", "clone"),
+            ("o", "browser"),
+            ("r", "refresh"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
+        AppState::FileBrowsing => &[
+            ("j/k", "nav"),
+            ("J/K", "scroll preview"),
+            ("l", "open"),
+            ("h", "up / back"),
+            ("Esc", "back to repos"),
+            ("q", "quit"),
+        ],
+        AppState::Cloning => &[("Enter", "confirm"), ("Esc", "cancel")],
+        AppState::Error(_) => &[("any key", "dismiss")],
+        AppState::Help => &[("any key", "close")],
+        _ => &[("q", "quit")],
     };
-    let msg = app.status_msg.as_deref().unwrap_or(hints);
-    let para = Paragraph::new(msg).style(Style::default().fg(Color::DarkGray));
+
+    let mut spans = vec![Span::raw(" ")];
+    for (i, (key, action)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            *key,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(":{}", action),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    let para = Paragraph::new(Line::from(spans));
     f.render_widget(para, area);
 }
 
