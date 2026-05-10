@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use octocrab::Octocrab;
 use serde::Deserialize;
 
-use crate::types::{Repo, SearchResult};
+use crate::types::{EntryType, FileEntry, Repo, SearchResult};
 
 pub struct GithubClient {
     inner: Octocrab,
@@ -39,6 +39,17 @@ struct OwnerItem {
 struct ReadmeResponse {
     content: String,
     encoding: String,
+}
+
+#[derive(Deserialize)]
+struct ContentItem {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    item_type: String,
+    download_url: Option<String>,
+    content: Option<String>,
+    encoding: Option<String>,
 }
 
 impl GithubClient {
@@ -90,6 +101,70 @@ impl GithubClient {
             repos,
             total_count: response.total_count,
         })
+    }
+
+    pub async fn get_contents(
+        &self,
+        owner: &str,
+        repo: &str,
+        path: &str,
+    ) -> Result<Vec<FileEntry>> {
+        let url = if path.is_empty() {
+            format!("/repos/{}/{}/contents", owner, repo)
+        } else {
+            format!("/repos/{}/{}/contents/{}", owner, repo, path)
+        };
+
+        let items: Vec<ContentItem> = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("contents request failed")?;
+
+        let mut entries: Vec<FileEntry> = items
+            .into_iter()
+            .map(|item| FileEntry {
+                name: item.name,
+                path: item.path,
+                entry_type: if item.item_type == "dir" {
+                    EntryType::Dir
+                } else {
+                    EntryType::File
+                },
+            })
+            .collect();
+
+        // dirs first, then files, both alphabetical
+        entries.sort_by(|a, b| match (&a.entry_type, &b.entry_type) {
+            (EntryType::Dir, EntryType::File) => std::cmp::Ordering::Less,
+            (EntryType::File, EntryType::Dir) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+
+        Ok(entries)
+    }
+
+    pub async fn get_file_content(&self, owner: &str, repo: &str, path: &str) -> Result<String> {
+        let url = format!("/repos/{}/{}/contents/{}", owner, repo, path);
+
+        let item: ContentItem = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("file content request failed")?;
+
+        if let (Some(content), Some(encoding)) = (item.content, item.encoding) {
+            if encoding == "base64" {
+                let clean = content.replace('\n', "");
+                let bytes = general_purpose::STANDARD
+                    .decode(&clean)
+                    .context("failed to base64-decode file content")?;
+                return Ok(String::from_utf8_lossy(&bytes).to_string());
+            }
+        }
+
+        // fallback: try download_url
+        Err(anyhow!("could not decode file content"))
     }
 
     pub async fn get_readme(&self, owner: &str, repo: &str) -> Result<String> {

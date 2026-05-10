@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown;
-use crate::types::AppState;
+use crate::types::{AppState, EntryType};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -40,9 +40,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let search_area = left_split[0];
     let list_area = left_split[1];
 
-    draw_search_bar(f, app, search_area);
-    draw_results(f, app, list_area);
-    draw_readme(f, app, right_area);
+    if matches!(app.state, AppState::FileBrowsing) {
+        draw_file_browser(f, app, left_area);
+        draw_file_content(f, app, right_area);
+    } else {
+        draw_search_bar(f, app, search_area);
+        draw_results(f, app, list_area);
+        draw_readme(f, app, right_area);
+    }
     draw_status_bar(f, app, status_area);
 
     // Overlays on top
@@ -170,11 +175,107 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let hints =
-        " /:search  j/k:nav  Enter:readme  c:clone  s:star  f:fork  o:browser  ?:help  q:quit";
+    let hints = if matches!(app.state, AppState::FileBrowsing) {
+        " j/k:nav  l:enter  h:up  Esc:back  q:quit"
+    } else {
+        " /:search  j/k:nav  Enter:readme  t:files  c:clone  o:browser  ?:help  q:quit"
+    };
     let msg = app.status_msg.as_deref().unwrap_or(hints);
     let para = Paragraph::new(msg).style(Style::default().fg(Color::DarkGray));
     f.render_widget(para, area);
+}
+
+fn draw_file_browser(f: &mut Frame, app: &mut App, area: Rect) {
+    let repo_name = app
+        .selected_repo()
+        .map(|r| r.full_name.clone())
+        .unwrap_or_default();
+    let current_path = app.current_file_path().to_string();
+    let title = if current_path.is_empty() {
+        format!("Files — {}", repo_name)
+    } else {
+        format!("Files — {}/{}", repo_name, current_path)
+    };
+
+    let items: Vec<ListItem> = app
+        .file_entries
+        .iter()
+        .map(|entry| {
+            let (prefix, style) = match entry.entry_type {
+                EntryType::Dir => (
+                    "▶ ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                EntryType::File => (" ", Style::default().fg(Color::White)),
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(entry.name.clone(), style),
+            ]))
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.file_entries.is_empty() {
+        state.select(Some(app.file_selected));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_file_content(f: &mut Frame, app: &App, area: Rect) {
+    let title = app
+        .selected_entry()
+        .map(|e| e.path.clone())
+        .unwrap_or_else(|| "Preview".to_string());
+
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let text: Text = match &app.file_content {
+        Some(content) => {
+            let is_md = app
+                .selected_entry()
+                .map(|e| e.name.ends_with(".md") || e.name.ends_with(".markdown"))
+                .unwrap_or(false);
+            if is_md {
+                Text::from(markdown::render(content))
+            } else {
+                Text::raw(content.clone())
+            }
+        }
+        None => {
+            let msg = if app.loading {
+                "Loading..."
+            } else {
+                match app.selected_entry() {
+                    Some(e) if e.entry_type == EntryType::Dir => "Press l to enter directory",
+                    Some(_) => "Press l to preview file",
+                    None => "",
+                }
+            };
+            Text::from(Line::from(Span::styled(
+                msg,
+                Style::default().fg(Color::DarkGray),
+            )))
+        }
+    };
+
+    let para = Paragraph::new(text)
+        .wrap(Wrap { trim: false })
+        .scroll((app.file_scroll, 0));
+    f.render_widget(para, inner);
 }
 
 fn draw_error_overlay(f: &mut Frame, area: Rect, msg: &str) {

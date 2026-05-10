@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
-use crate::types::AppState;
+use crate::types::{AppState, EntryType};
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -25,6 +25,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::Searching => handle_searching(app, client, key.code).await,
         AppState::Browsing => handle_browsing(app, client, key.code).await,
         AppState::Previewing => handle_previewing(app, key.code),
+        AppState::FileBrowsing => handle_file_browsing(app, client, key.code).await,
         AppState::Cloning => handle_cloning(app, key.code).await,
         AppState::Error(_) | AppState::Help => {
             app.state = AppState::Browsing;
@@ -74,6 +75,24 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         }
         KeyCode::Char('?') => {
             app.state = AppState::Help;
+        }
+        KeyCode::Char('t') => {
+            if let Some(repo) = app.selected_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.file_entries.clear();
+                app.file_selected = 0;
+                app.file_path_stack.clear();
+                app.file_content = None;
+                app.file_scroll = 0;
+                app.loading = true;
+                app.state = AppState::FileBrowsing;
+                match client.get_contents(&owner, &name, "").await {
+                    Ok(entries) => app.file_entries = entries,
+                    Err(e) => app.set_error(format!("failed to load files: {}", e)),
+                }
+                app.loading = false;
+            }
         }
         KeyCode::Char('c') => {
             if app.selected_repo().is_some() {
@@ -153,6 +172,81 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
         }
         KeyCode::Char(c) => {
             app.clone_path_input.push(c);
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc => {
+            app.state = AppState::Browsing;
+            app.file_content = None;
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.file_next();
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.file_prev();
+        }
+        KeyCode::Char('h') => {
+            // go up one directory
+            if app.file_path_stack.pop().is_some() {
+                if let Some(repo) = app.selected_repo() {
+                    let owner = repo.owner.clone();
+                    let name = repo.name.clone();
+                    let path = app.current_file_path().to_string();
+                    app.file_entries.clear();
+                    app.file_selected = 0;
+                    app.file_content = None;
+                    app.loading = true;
+                    match client.get_contents(&owner, &name, &path).await {
+                        Ok(entries) => app.file_entries = entries,
+                        Err(e) => app.set_error(format!("failed to load files: {}", e)),
+                    }
+                    app.loading = false;
+                }
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(entry) = app.selected_entry().cloned() {
+                match entry.entry_type {
+                    EntryType::Dir => {
+                        if let Some(repo) = app.selected_repo() {
+                            let owner = repo.owner.clone();
+                            let name = repo.name.clone();
+                            app.file_path_stack.push(entry.path.clone());
+                            app.file_entries.clear();
+                            app.file_selected = 0;
+                            app.file_content = None;
+                            app.loading = true;
+                            match client.get_contents(&owner, &name, &entry.path).await {
+                                Ok(entries) => app.file_entries = entries,
+                                Err(e) => app.set_error(format!("failed to load dir: {}", e)),
+                            }
+                            app.loading = false;
+                        }
+                    }
+                    EntryType::File => {
+                        if let Some(repo) = app.selected_repo() {
+                            let owner = repo.owner.clone();
+                            let name = repo.name.clone();
+                            app.loading = true;
+                            app.file_content = None;
+                            match client.get_file_content(&owner, &name, &entry.path).await {
+                                Ok(content) => {
+                                    app.file_content = Some(content);
+                                    app.file_scroll = 0;
+                                }
+                                Err(e) => app.set_error(format!("failed to load file: {}", e)),
+                            }
+                            app.loading = false;
+                        }
+                    }
+                }
+            }
         }
         _ => {}
     }

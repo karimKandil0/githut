@@ -1,4 +1,4 @@
-use crate::types::{AppState, Repo};
+use crate::types::{AppState, FileEntry, Repo};
 
 pub struct App {
     pub state: AppState,
@@ -11,6 +11,12 @@ pub struct App {
     pub clone_path_input: String,
     pub status_msg: Option<String>,
     pub loading: bool,
+    // file browser
+    pub file_entries: Vec<FileEntry>,
+    pub file_selected: usize,
+    pub file_path_stack: Vec<String>,
+    pub file_content: Option<String>,
+    pub file_scroll: u16,
 }
 
 impl App {
@@ -26,6 +32,11 @@ impl App {
             clone_path_input: String::new(),
             status_msg: None,
             loading: false,
+            file_entries: Vec::new(),
+            file_selected: 0,
+            file_path_stack: Vec::new(),
+            file_content: None,
+            file_scroll: 0,
         }
     }
 
@@ -66,5 +77,38 @@ impl App {
 
     pub fn clear_status(&mut self) {
         self.status_msg = None;
+    }
+
+    pub fn file_next(&mut self) {
+        if self.file_entries.is_empty() {
+            return;
+        }
+        self.file_selected = (self.file_selected + 1) % self.file_entries.len();
+        self.file_content = None;
+        self.file_scroll = 0;
+    }
+
+    pub fn file_prev(&mut self) {
+        if self.file_entries.is_empty() {
+            return;
+        }
+        if self.file_selected == 0 {
+            self.file_selected = self.file_entries.len() - 1;
+        } else {
+            self.file_selected -= 1;
+        }
+        self.file_content = None;
+        self.file_scroll = 0;
+    }
+
+    pub fn selected_entry(&self) -> Option<&FileEntry> {
+        self.file_entries.get(self.file_selected)
+    }
+
+    pub fn current_file_path(&self) -> &str {
+        self.file_path_stack
+            .last()
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 }

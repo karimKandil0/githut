@@ -20,10 +20,24 @@ pub enum AppState {
     Searching,
     Browsing,
     Previewing,
+    FileBrowsing,
     Cloning,
     SparseCloning,
     Error(String),
     Help,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EntryType {
+    File,
+    Dir,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub entry_type: EntryType,
 }
 
 #[derive(Debug, Clone)]
