@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod config;
 mod git;
 mod input;
 mod markdown;
@@ -32,7 +33,12 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = app::App::new();
+    let cfg = config::load().unwrap_or_else(|e| {
+        eprintln!("config warning: {}", e);
+        config::Config::default()
+    });
+
+    let mut app = app::App::new(cfg);
 
     let result = run_app(&mut terminal, &mut app, &client).await;
 

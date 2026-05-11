@@ -89,13 +89,13 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         }
         KeyCode::Char('c') => {
             if app.selected_repo().is_some() {
-                app.clone_path_input.clear();
+                app.prefill_clone_path();
                 app.state = AppState::Cloning;
             }
         }
         KeyCode::Char('C') => {
             if app.selected_repo().is_some() {
-                app.sparse_path_input.clear();
+                app.prefill_sparse_path();
                 app.sparse_dirs_input.clear();
                 app.sparse_step = SparseStep::Path;
                 app.state = AppState::SparseCloning;

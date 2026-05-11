@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-use crate::input::TextInput;
+use crate::config::Config;
+use crate::input::{expand_path, TextInput};
 use crate::types::{AppState, FileEntry, Repo, SparseStep};
 
 pub struct App {
@@ -33,10 +34,12 @@ pub struct App {
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
+    // config
+    pub config: Config,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         let (bg_tx, bg_rx) = mpsc::unbounded_channel();
         Self {
             state: AppState::Searching,
@@ -62,6 +65,28 @@ impl App {
             file_save_path_input: TextInput::new(),
             bg_tx,
             bg_rx,
+            config,
+        }
+    }
+
+    /// Pre-fill clone/sparse path inputs with default_clone_path from config if set.
+    pub fn prefill_clone_path(&mut self) {
+        self.clone_path_input.clear();
+        if let Some(default) = &self.config.default_clone_path.clone() {
+            let expanded = expand_path(default.trim());
+            for c in expanded.chars() {
+                self.clone_path_input.insert(c);
+            }
+        }
+    }
+
+    pub fn prefill_sparse_path(&mut self) {
+        self.sparse_path_input.clear();
+        if let Some(default) = &self.config.default_clone_path.clone() {
+            let expanded = expand_path(default.trim());
+            for c in expanded.chars() {
+                self.sparse_path_input.insert(c);
+            }
         }
     }
 
