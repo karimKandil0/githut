@@ -420,13 +420,11 @@ impl GithubClient {
             login: String,
         }
 
-        let type_filter = if is_pr { "pulls" } else { "issues" };
         let url = format!(
-            "/repos/{}/{}/issues?state={}&per_page=50&sort=updated&type={}",
+            "/repos/{}/{}/issues?state={}&per_page=50&sort=updated",
             owner,
             repo,
             filter.as_str(),
-            type_filter
         );
         // GitHub issues endpoint returns both issues and PRs; filter by pull_request field
         let items: Vec<IssueItem> = self
