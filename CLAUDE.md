@@ -198,7 +198,7 @@ Goal: fork, star, open browser.
 - [x] events.rs: f, s keybindings
 - [x] open crate: browser open on `o`
 
-### Phase 3 — Power Features (IN PROGRESS)
+### Phase 3 — Power Features (DONE)
 Goal: sparse clone, language filter, better UX.
 
 - [x] git.rs: sparse-clone via git CLI (--filter=blob:none --sparse)
@@ -206,10 +206,10 @@ Goal: sparse clone, language filter, better UX.
 - [x] events.rs: c in FileBrowsing saves single file to local path
 - [x] clone/sparse-clone run in background — TUI stays responsive
 - [x] TextInput: arrow keys, cursor, Home/End, Delete, path expansion (~, ./, ../)
-- [ ] ui.rs: language filter tab cycling
-- [ ] github.rs: pass language filter to search query
-- [ ] ui.rs: rate limit display in status bar
-- [ ] config: ~/.config/githut/config.toml for default clone path, etc.
+- [x] ui.rs: language filter tab cycling (Tab key, shown in search bar title)
+- [x] github.rs: pass language filter to search query
+- [x] ui.rs: rate limit display in status bar (search + core, right-aligned)
+- [x] config: ~/.config/githut/config.toml with default_clone_path
 
 ### Phase 4 — Your Repos (direction 2)
 Goal: manage your own repos, not just discover.
