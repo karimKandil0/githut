@@ -393,26 +393,65 @@ fn draw_error_overlay(f: &mut Frame, area: Rect, msg: &str) {
 }
 
 fn draw_help_overlay(f: &mut Frame, area: Rect) {
-    let popup = centered_rect(50, 60, area);
+    let popup = centered_rect(52, 75, area);
     f.render_widget(Clear, popup);
-    let help_text = "\
- /:search        focus search input
- Enter           confirm search
- j/k             navigate list
- J/K             scroll preview pane
- l / Enter       open file browser for selected repo
- h               go up / back
- c               clone selected repo
- o               open in browser
- r               refresh results
- ?               toggle this help
- Esc             back / close overlay
- q               quit";
+
+    fn section(title: &'static str) -> Line<'static> {
+        Line::from(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+    }
+    fn row(key: &'static str, action: &'static str) -> Line<'static> {
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("{:<14}", key),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(action, Style::default().fg(Color::DarkGray)),
+        ])
+    }
+
+    let lines: Vec<Line> = vec![
+        section("search"),
+        row("/", "focus search input"),
+        row("Enter", "confirm search"),
+        row("r", "refresh results"),
+        Line::raw(""),
+        section("navigation"),
+        row("j / k", "move up / down"),
+        row("J / K", "scroll preview pane"),
+        row("l / Enter", "open file browser"),
+        row("h", "go up one dir / back to repos"),
+        row("Esc", "back / close overlay"),
+        Line::raw(""),
+        section("repo actions"),
+        row("c", "clone to local path"),
+        row("C", "sparse clone (path + dirs)"),
+        row("s", "star / unstar"),
+        row("f", "fork"),
+        row("o", "open in browser"),
+        Line::raw(""),
+        section("file browser"),
+        row("l / Enter", "enter dir / preview file"),
+        row("c", "save file to local path"),
+        row("h", "go up one dir"),
+        Line::raw(""),
+        section("general"),
+        row("?", "toggle this help"),
+        row("q", "quit"),
+    ];
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
         .title("Help — press any key to close");
-    let para = Paragraph::new(help_text).block(block);
+    let para = Paragraph::new(lines).block(block);
     f.render_widget(para, popup);
 }
 
