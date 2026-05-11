@@ -20,6 +20,8 @@ pub fn sparse_clone(url: &str, path: &str, _branch: &str, dirs: &[&str]) -> Resu
             url,
             path,
         ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .context("failed to run git clone")?;
 
@@ -35,6 +37,8 @@ pub fn sparse_clone(url: &str, path: &str, _branch: &str, dirs: &[&str]) -> Resu
             .arg("sparse-checkout")
             .arg("set")
             .args(dirs)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .context("failed to run git sparse-checkout set")?;
 
@@ -48,6 +52,8 @@ pub fn sparse_clone(url: &str, path: &str, _branch: &str, dirs: &[&str]) -> Resu
         .arg("-C")
         .arg(path)
         .arg("checkout")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .context("failed to run git checkout")?;
 
