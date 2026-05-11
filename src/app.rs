@@ -2,17 +2,18 @@ use std::collections::HashSet;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+use crate::input::TextInput;
 use crate::types::{AppState, FileEntry, Repo, SparseStep};
 
 pub struct App {
     pub state: AppState,
     pub results: Vec<Repo>,
     pub selected: usize,
-    pub search_query: String,
+    pub search_query: TextInput,
     pub language_filter: Option<String>,
     pub readme_content: Option<String>,
     pub readme_scroll: u16,
-    pub clone_path_input: String,
+    pub clone_path_input: TextInput,
     pub status_msg: Option<String>,
     pub loading: bool,
     // file browser
@@ -22,12 +23,13 @@ pub struct App {
     pub file_content: Option<String>,
     pub file_scroll: u16,
     pub readme_pending: Option<Instant>,
-    pub starred: HashSet<String>, // full_name of starred repos
+    pub starred: HashSet<String>,
     // sparse clone
-    pub sparse_path_input: String,
-    pub sparse_dirs_input: String,
+    pub sparse_path_input: TextInput,
+    pub sparse_dirs_input: TextInput,
     pub sparse_step: SparseStep,
-    pub file_save_path_input: String,
+    // file save
+    pub file_save_path_input: TextInput,
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
@@ -40,11 +42,11 @@ impl App {
             state: AppState::Searching,
             results: Vec::new(),
             selected: 0,
-            search_query: String::new(),
+            search_query: TextInput::new(),
             language_filter: None,
             readme_content: None,
             readme_scroll: 0,
-            clone_path_input: String::new(),
+            clone_path_input: TextInput::new(),
             status_msg: None,
             loading: false,
             file_entries: Vec::new(),
@@ -54,10 +56,10 @@ impl App {
             file_scroll: 0,
             readme_pending: None,
             starred: HashSet::new(),
-            sparse_path_input: String::new(),
-            sparse_dirs_input: String::new(),
+            sparse_path_input: TextInput::new(),
+            sparse_dirs_input: TextInput::new(),
             sparse_step: SparseStep::Path,
-            file_save_path_input: String::new(),
+            file_save_path_input: TextInput::new(),
             bg_tx,
             bg_rx,
         }

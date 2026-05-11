@@ -54,15 +54,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match &app.state.clone() {
         AppState::Error(msg) => draw_error_overlay(f, area, msg),
         AppState::Help => draw_help_overlay(f, area),
-        AppState::Cloning => {
-            draw_input_overlay(f, area, "Clone path:", &app.clone_path_input.clone())
-        }
+        AppState::Cloning => draw_input_overlay(
+            f,
+            area,
+            "Clone path:",
+            &app.clone_path_input.display_with_cursor(),
+        ),
         AppState::SparseCloning => draw_sparse_overlay(f, area, app),
         AppState::FileSaving => draw_input_overlay(
             f,
             area,
             "Save file to path:",
-            &app.file_save_path_input.clone(),
+            &app.file_save_path_input.display_with_cursor(),
         ),
         _ => {}
     }
@@ -76,14 +79,13 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let query_display = if app.search_query.is_empty() && !is_searching {
+    let text = if app.search_query.is_empty() && !is_searching {
         "Press / to search...".to_string()
+    } else if is_searching {
+        app.search_query.display_with_cursor()
     } else {
-        app.search_query.clone()
+        app.search_query.as_str().to_string()
     };
-
-    let cursor = if is_searching { "_" } else { "" };
-    let text = format!("{}{}", query_display, cursor);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -347,15 +349,15 @@ fn draw_sparse_overlay(f: &mut Frame, area: Rect, app: &App) {
     let popup = centered_rect(55, 25, area);
     f.render_widget(Clear, popup);
 
-    let (title, input, hint) = match app.sparse_step {
+    let (title, input_display, hint) = match app.sparse_step {
         SparseStep::Path => (
             "Sparse clone — step 1/2: path",
-            app.sparse_path_input.as_str(),
+            app.sparse_path_input.display_with_cursor(),
             "Enter destination path, then press Enter",
         ),
         SparseStep::Dirs => (
             "Sparse clone — step 2/2: directories",
-            app.sparse_dirs_input.as_str(),
+            app.sparse_dirs_input.display_with_cursor(),
             "Space-separated dirs (e.g. src docs). Leave empty for all.",
         ),
     };
@@ -372,7 +374,7 @@ fn draw_sparse_overlay(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(inner);
 
-    f.render_widget(Paragraph::new(format!("{}_", input)), layout[0]);
+    f.render_widget(Paragraph::new(input_display), layout[0]);
     f.render_widget(
         Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
         layout[1],
@@ -421,7 +423,7 @@ fn draw_input_overlay(f: &mut Frame, area: Rect, prompt: &str, input: &str) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
         .title(format!("{} (Enter to confirm, Esc to cancel)", prompt));
-    let para = Paragraph::new(format!("{}_", input)).block(block);
+    let para = Paragraph::new(input.to_string()).block(block);
     f.render_widget(para, popup);
 }
 

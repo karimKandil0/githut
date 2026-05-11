@@ -1,14 +1,13 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use std::path::Path;
 use std::time::Duration;
-
 use std::time::Instant;
 
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
 use crate::types::{AppState, EntryType, SparseStep};
-use std::path::Path;
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -49,12 +48,13 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
                 do_search(app, client).await;
             }
         }
-        KeyCode::Backspace => {
-            app.search_query.pop();
-        }
-        KeyCode::Char(c) => {
-            app.search_query.push(c);
-        }
+        KeyCode::Backspace => app.search_query.backspace(),
+        KeyCode::Delete => app.search_query.delete(),
+        KeyCode::Left => app.search_query.move_left(),
+        KeyCode::Right => app.search_query.move_right(),
+        KeyCode::Home => app.search_query.move_home(),
+        KeyCode::End => app.search_query.move_end(),
+        KeyCode::Char(c) => app.search_query.insert(c),
         _ => {}
     }
     Ok(false)
@@ -172,12 +172,10 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
     match code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Esc | KeyCode::Char('h') if app.file_path_stack.is_empty() => {
-            // at root — go back to repo browsing
             app.state = AppState::Browsing;
             app.file_content = None;
         }
         KeyCode::Char('h') => {
-            // go up one directory
             app.file_path_stack.pop();
             if let Some(repo) = app.selected_repo() {
                 let owner = repo.owner.clone();
@@ -204,7 +202,6 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
         KeyCode::Char('k') | KeyCode::Up => {
             app.file_prev();
         }
-        // J/K scroll the file preview
         KeyCode::Char('J') => {
             app.file_scroll = app.file_scroll.saturating_add(1);
         }
@@ -267,13 +264,16 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
         KeyCode::Esc => {
             app.state = AppState::Browsing;
         }
-        KeyCode::Backspace => {
-            app.clone_path_input.pop();
-        }
+        KeyCode::Backspace => app.clone_path_input.backspace(),
+        KeyCode::Delete => app.clone_path_input.delete(),
+        KeyCode::Left => app.clone_path_input.move_left(),
+        KeyCode::Right => app.clone_path_input.move_right(),
+        KeyCode::Home => app.clone_path_input.move_home(),
+        KeyCode::End => app.clone_path_input.move_end(),
         KeyCode::Enter => {
             if let Some(repo) = app.selected_repo() {
                 let url = repo.clone_url.clone();
-                let path = app.clone_path_input.trim().to_string();
+                let path = app.clone_path_input.to_path();
                 if path.is_empty() {
                     app.set_error("clone path cannot be empty");
                     return Ok(false);
@@ -290,9 +290,7 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                 });
             }
         }
-        KeyCode::Char(c) => {
-            app.clone_path_input.push(c);
-        }
+        KeyCode::Char(c) => app.clone_path_input.insert(c),
         _ => {}
     }
     Ok(false)
@@ -304,16 +302,32 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
             app.state = AppState::Browsing;
         }
         KeyCode::Backspace => match app.sparse_step {
-            SparseStep::Path => {
-                app.sparse_path_input.pop();
-            }
-            SparseStep::Dirs => {
-                app.sparse_dirs_input.pop();
-            }
+            SparseStep::Path => app.sparse_path_input.backspace(),
+            SparseStep::Dirs => app.sparse_dirs_input.backspace(),
+        },
+        KeyCode::Delete => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.delete(),
+            SparseStep::Dirs => app.sparse_dirs_input.delete(),
+        },
+        KeyCode::Left => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.move_left(),
+            SparseStep::Dirs => app.sparse_dirs_input.move_left(),
+        },
+        KeyCode::Right => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.move_right(),
+            SparseStep::Dirs => app.sparse_dirs_input.move_right(),
+        },
+        KeyCode::Home => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.move_home(),
+            SparseStep::Dirs => app.sparse_dirs_input.move_home(),
+        },
+        KeyCode::End => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.move_end(),
+            SparseStep::Dirs => app.sparse_dirs_input.move_end(),
         },
         KeyCode::Enter => match app.sparse_step {
             SparseStep::Path => {
-                if !app.sparse_path_input.trim().is_empty() {
+                if !app.sparse_path_input.as_str().trim().is_empty() {
                     app.sparse_step = SparseStep::Dirs;
                 }
             }
@@ -321,8 +335,8 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                 if let Some(repo) = app.selected_repo() {
                     let url = repo.clone_url.clone();
                     let branch = repo.default_branch.clone();
-                    let path = app.sparse_path_input.trim().to_string();
-                    let dirs_raw = app.sparse_dirs_input.trim().to_string();
+                    let path = app.sparse_path_input.to_path();
+                    let dirs_raw = app.sparse_dirs_input.as_str().trim().to_string();
                     let dirs: Vec<String> = if dirs_raw.is_empty() {
                         vec![]
                     } else {
@@ -343,8 +357,8 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
             }
         },
         KeyCode::Char(c) => match app.sparse_step {
-            SparseStep::Path => app.sparse_path_input.push(c),
-            SparseStep::Dirs => app.sparse_dirs_input.push(c),
+            SparseStep::Path => app.sparse_path_input.insert(c),
+            SparseStep::Dirs => app.sparse_dirs_input.insert(c),
         },
         _ => {}
     }
@@ -356,14 +370,15 @@ async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode)
         KeyCode::Esc => {
             app.state = AppState::FileBrowsing;
         }
-        KeyCode::Backspace => {
-            app.file_save_path_input.pop();
-        }
-        KeyCode::Char(c) => {
-            app.file_save_path_input.push(c);
-        }
+        KeyCode::Backspace => app.file_save_path_input.backspace(),
+        KeyCode::Delete => app.file_save_path_input.delete(),
+        KeyCode::Left => app.file_save_path_input.move_left(),
+        KeyCode::Right => app.file_save_path_input.move_right(),
+        KeyCode::Home => app.file_save_path_input.move_home(),
+        KeyCode::End => app.file_save_path_input.move_end(),
+        KeyCode::Char(c) => app.file_save_path_input.insert(c),
         KeyCode::Enter => {
-            let dest = app.file_save_path_input.trim().to_string();
+            let dest = app.file_save_path_input.to_path();
             if dest.is_empty() {
                 app.set_error("save path cannot be empty");
                 return Ok(false);
@@ -408,7 +423,7 @@ async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode)
 }
 
 async fn do_search(app: &mut App, client: &GithubClient) {
-    let query = app.search_query.clone();
+    let query = app.search_query.as_str().to_string();
     let lang = app.language_filter.clone();
     app.loading = true;
     app.state = AppState::Browsing;

@@ -1,6 +1,7 @@
 mod api;
 mod app;
 mod git;
+mod input;
 mod markdown;
 mod tui;
 mod types;
