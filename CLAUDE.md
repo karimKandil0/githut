@@ -225,13 +225,16 @@ Goal: manage your own repos, not just discover.
 - [x] h/Esc in file browser returns to correct tab (MyRepos or Browsing)
 - [x] File preview fallback to download_url for files >1MB
 
-### Phase 5 — Profiles (planned)
+### Phase 5 — Profiles (DONE)
 Goal: browse any user's public repos and profile info.
 
-- [ ] github.rs: get user profile (login, bio, followers, public repos)
-- [ ] github.rs: list repos by username
-- [ ] events.rs: u key on selected repo → navigate to owner's profile
-- [ ] ui.rs: profile view (name, bio, stats) + their repos list
+- [x] github.rs: get user profile (login, name, bio, followers, following, public repos)
+- [x] github.rs: list repos by username
+- [x] events.rs: u key on any repo → opens owner's profile view
+- [x] ui.rs: profile header (login, name, bio, stats) + their repos list
+- [x] profile repos: j/k nav, l file browser, c clone, o open profile, u follow owner
+- [x] Esc/h returns to previous state (Browsing, MyRepos, or profile chain)
+- [x] file browser correctly tracks origin state via prev_state
 
 ## Error Handling
 
