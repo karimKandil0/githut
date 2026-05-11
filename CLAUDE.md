@@ -211,13 +211,22 @@ Goal: sparse clone, language filter, better UX.
 - [x] ui.rs: rate limit display in status bar (search + core, right-aligned)
 - [x] config: ~/.config/githut/config.toml with default_clone_path
 
-### Phase 4 — Your Repos (direction 2)
+### Phase 4 — Your Repos (DONE)
 Goal: manage your own repos, not just discover.
 
-- [ ] github.rs: list authenticated user's repos
-- [ ] ui.rs: tab switching between Search and My Repos views
-- [ ] github.rs: delete, archive, rename via API
-- [ ] github.rs: list and sync forks
+- [x] github.rs: list authenticated user's repos (GET /user/repos)
+- [x] ui.rs: tab switching — 1=Search, 2=My Repos — tab bar at top
+- [x] github.rs: delete (D), rename (R), archive/unarchive (A) via API
+- [x] My Repos list shows archived/fork badges, star indicator
+- [x] File browser, clone, star, open browser all work from My Repos tab
+
+### Phase 5 — Profiles (planned)
+Goal: browse any user's public repos and profile info.
+
+- [ ] github.rs: get user profile (login, bio, followers, public repos)
+- [ ] github.rs: list repos by username
+- [ ] events.rs: u key on selected repo → navigate to owner's profile
+- [ ] ui.rs: profile view (name, bio, stats) + their repos list
 
 ## Error Handling
 
