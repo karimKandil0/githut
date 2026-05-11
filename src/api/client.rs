@@ -420,25 +420,41 @@ impl GithubClient {
             login: String,
         }
 
-        let url = format!(
-            "/repos/{}/{}/issues?state={}&per_page=50&sort=updated",
-            owner,
-            repo,
-            filter.as_str(),
-        );
-        // GitHub issues endpoint returns both issues and PRs; filter by pull_request field
-        let items: Vec<IssueItem> = self
-            .inner
-            .get(url, None::<&()>)
-            .await
-            .context("list issues request failed")?;
+        // Fetch multiple pages to get enough items after client-side PR/issue filtering.
+        // nixpkgs-scale repos have thousands of PRs; 50/page means all results may be PRs.
+        let mut all_items: Vec<IssueItem> = Vec::new();
+        for page in 1u32..=5 {
+            let url = format!(
+                "/repos/{}/{}/issues?state={}&per_page=100&sort=updated&page={}",
+                owner,
+                repo,
+                filter.as_str(),
+                page,
+            );
+            let page_items: Vec<IssueItem> = self
+                .inner
+                .get(url, None::<&()>)
+                .await
+                .context("list issues request failed")?;
+            let done = page_items.len() < 100;
+            all_items.extend(page_items);
+            // stop once we have enough of the target type or hit last page
+            let count_matching = all_items
+                .iter()
+                .filter(|i| i.pull_request.is_some() == is_pr)
+                .count();
+            if done || count_matching >= 50 {
+                break;
+            }
+        }
 
-        Ok(items
+        Ok(all_items
             .into_iter()
             .filter(|item| {
                 let has_pr = item.pull_request.is_some();
                 has_pr == is_pr
             })
+            .take(50)
             .map(|item| Issue {
                 number: item.number,
                 title: item.title,
