@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
 use crate::types::{AppState, FileEntry, Repo, SparseStep};
 
@@ -26,10 +27,14 @@ pub struct App {
     pub sparse_path_input: String,
     pub sparse_dirs_input: String,
     pub sparse_step: SparseStep,
+    // background task results
+    pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
+    pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
 }
 
 impl App {
     pub fn new() -> Self {
+        let (bg_tx, bg_rx) = mpsc::unbounded_channel();
         Self {
             state: AppState::Searching,
             results: Vec::new(),
@@ -51,6 +56,8 @@ impl App {
             sparse_path_input: String::new(),
             sparse_dirs_input: String::new(),
             sparse_step: SparseStep::Path,
+            bg_tx,
+            bg_rx,
         }
     }
 

@@ -268,17 +268,16 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                     app.set_error("clone path cannot be empty");
                     return Ok(false);
                 }
-                app.set_status(format!("cloning {}...", repo.full_name));
+                let full_name = repo.full_name.clone();
+                app.set_status(format!("cloning {}...", full_name));
                 app.state = AppState::Browsing;
-                let url2 = url.clone();
-                let path2 = path.clone();
-                match tokio::task::spawn_blocking(move || git::clone_repo(&url2, &path2))
-                    .await
-                    .unwrap_or_else(|e| Err(anyhow::anyhow!("task panicked: {}", e)))
-                {
-                    Ok(()) => app.set_status(format!("cloned to {}", path)),
-                    Err(e) => app.set_error(format!("clone failed: {}", e)),
-                }
+                let tx = app.bg_tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let res = git::clone_repo(&url, &path)
+                        .map(|_| format!("cloned to {}", path))
+                        .map_err(|e| format!("clone failed: {}", e));
+                    let _ = tx.send(res);
+                });
             }
         }
         KeyCode::Char(c) => {
@@ -322,19 +321,14 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                     let full_name = repo.full_name.clone();
                     app.set_status(format!("sparse cloning {}...", full_name));
                     app.state = AppState::Browsing;
-                    match tokio::task::spawn_blocking(move || {
+                    let tx = app.bg_tx.clone();
+                    tokio::task::spawn_blocking(move || {
                         let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
-                        git::sparse_clone(&url, &path, &branch, &dir_refs)
-                    })
-                    .await
-                    .unwrap_or_else(|e| Err(anyhow::anyhow!("task panicked: {}", e)))
-                    {
-                        Ok(()) => app.set_status(format!(
-                            "sparse cloned to {}",
-                            app.sparse_path_input.trim()
-                        )),
-                        Err(e) => app.set_error(format!("sparse clone failed: {}", e)),
-                    }
+                        let res = git::sparse_clone(&url, &path, &branch, &dir_refs)
+                            .map(|_| format!("sparse cloned to {}", path))
+                            .map_err(|e| format!("sparse clone failed: {}", e));
+                        let _ = tx.send(res);
+                    });
                 }
             }
         },

@@ -59,6 +59,14 @@ async fn run_app(
             break;
         }
 
+        // drain background task results (clone / sparse-clone)
+        while let Ok(msg) = app.bg_rx.try_recv() {
+            match msg {
+                Ok(s) => app.set_status(s),
+                Err(e) => app.set_error(e),
+            }
+        }
+
         // debounced fetch — fires 300ms after last j/k
         if app.take_readme_pending() {
             if let Some(repo) = app.selected_repo() {
