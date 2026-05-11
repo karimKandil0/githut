@@ -16,6 +16,7 @@ the terminal, keyboard-driven.
 - Async: tokio
 - GitHub API: octocrab
 - Git operations: git2 (regular clone) + git CLI shell-out (sparse clone)
+- HTTP: reqwest (raw file download fallback for files >1MB)
 - Markdown rendering: pulldown-cmark (custom ratatui renderer in src/markdown.rs)
 - Error handling: anyhow
 - Serialization: serde + serde_json
@@ -219,6 +220,10 @@ Goal: manage your own repos, not just discover.
 - [x] github.rs: delete (D), rename (R), archive/unarchive (A) via API
 - [x] My Repos list shows archived/fork badges, star indicator
 - [x] File browser, clone, star, open browser all work from My Repos tab
+- [x] Profile README auto-loads when switching to My Repos (if <login>/<login> repo exists)
+- [x] File browser uses active_repo() — works correctly from both tabs
+- [x] h/Esc in file browser returns to correct tab (MyRepos or Browsing)
+- [x] File preview fallback to download_url for files >1MB
 
 ### Phase 5 — Profiles (planned)
 Goal: browse any user's public repos and profile info.
