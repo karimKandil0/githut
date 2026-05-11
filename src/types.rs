@@ -52,3 +52,11 @@ pub struct SearchResult {
     pub repos: Vec<Repo>,
     pub total_count: u64,
 }
+
+#[derive(Debug, Clone)]
+pub struct RateLimit {
+    pub search_remaining: u32,
+    pub search_limit: u32,
+    pub core_remaining: u32,
+    pub core_limit: u32,
+}

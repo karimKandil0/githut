@@ -4,7 +4,22 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
-use crate::types::{AppState, FileEntry, Repo, SparseStep};
+use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep};
+
+pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
+    None,
+    Some("Rust"),
+    Some("Python"),
+    Some("Go"),
+    Some("TypeScript"),
+    Some("JavaScript"),
+    Some("C"),
+    Some("C++"),
+    Some("Java"),
+    Some("Zig"),
+    Some("Nix"),
+    Some("Shell"),
+];
 
 pub struct App {
     pub state: AppState,
@@ -25,6 +40,8 @@ pub struct App {
     pub file_scroll: u16,
     pub readme_pending: Option<Instant>,
     pub starred: HashSet<String>,
+    pub rate_limit: Option<RateLimit>,
+    pub language_idx: usize, // index into LANGUAGE_CYCLE
     // sparse clone
     pub sparse_path_input: TextInput,
     pub sparse_dirs_input: TextInput,
@@ -59,6 +76,8 @@ impl App {
             file_scroll: 0,
             readme_pending: None,
             starred: HashSet::new(),
+            rate_limit: None,
+            language_idx: 0,
             sparse_path_input: TextInput::new(),
             sparse_dirs_input: TextInput::new(),
             sparse_step: SparseStep::Path,
@@ -78,6 +97,15 @@ impl App {
                 self.clone_path_input.insert(c);
             }
         }
+    }
+
+    pub fn current_language(&self) -> Option<&str> {
+        LANGUAGE_CYCLE[self.language_idx]
+    }
+
+    pub fn cycle_language(&mut self) {
+        self.language_idx = (self.language_idx + 1) % LANGUAGE_CYCLE.len();
+        self.language_filter = LANGUAGE_CYCLE[self.language_idx].map(|s| s.to_string());
     }
 
     pub fn prefill_sparse_path(&mut self) {

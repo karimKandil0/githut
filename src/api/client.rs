@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use octocrab::Octocrab;
 use serde::Deserialize;
 
-use crate::types::{EntryType, FileEntry, Repo, SearchResult};
+use crate::types::{EntryType, FileEntry, RateLimit, Repo, SearchResult};
 
 pub struct GithubClient {
     inner: Octocrab,
@@ -202,6 +202,36 @@ impl GithubClient {
             .await
             .context("fork request failed")?;
         Ok(())
+    }
+
+    pub async fn get_rate_limit(&self) -> Result<RateLimit> {
+        #[derive(Deserialize)]
+        struct RateLimitResponse {
+            resources: Resources,
+        }
+        #[derive(Deserialize)]
+        struct Resources {
+            search: RateLimitItem,
+            core: RateLimitItem,
+        }
+        #[derive(Deserialize)]
+        struct RateLimitItem {
+            remaining: u32,
+            limit: u32,
+        }
+
+        let resp: RateLimitResponse = self
+            .inner
+            .get("/rate_limit", None::<&()>)
+            .await
+            .context("rate limit request failed")?;
+
+        Ok(RateLimit {
+            search_remaining: resp.resources.search.remaining,
+            search_limit: resp.resources.search.limit,
+            core_remaining: resp.resources.core.remaining,
+            core_limit: resp.resources.core.limit,
+        })
     }
 
     pub async fn get_readme(&self, owner: &str, repo: &str) -> Result<String> {

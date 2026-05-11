@@ -87,10 +87,15 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
         app.search_query.as_str().to_string()
     };
 
+    let lang_label = match app.current_language() {
+        Some(l) => format!("Search [{}]", l),
+        None => "Search".to_string(),
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title("Search");
+        .title(lang_label);
 
     let para = Paragraph::new(text).block(block);
     f.render_widget(para, area);
@@ -193,15 +198,49 @@ fn draw_readme(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     if let Some(msg) = &app.status_msg {
-        let para = Paragraph::new(msg.as_str()).style(Style::default().fg(Color::Yellow));
-        f.render_widget(para, area);
+        // show rate limit on the right if available
+        let rl_text = app.rate_limit.as_ref().map(|rl| {
+            format!(
+                " search:{}/{} core:{}/{} ",
+                rl.search_remaining, rl.search_limit, rl.core_remaining, rl.core_limit
+            )
+        });
+
+        if let Some(rl) = rl_text {
+            let left = Paragraph::new(msg.as_str()).style(Style::default().fg(Color::Yellow));
+            let right = Paragraph::new(rl)
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(ratatui::layout::Alignment::Right);
+            f.render_widget(left, area);
+            f.render_widget(right, area);
+        } else {
+            let para = Paragraph::new(msg.as_str()).style(Style::default().fg(Color::Yellow));
+            f.render_widget(para, area);
+        }
         return;
     }
 
+    // no status msg — show rate limit on right
+    if let Some(rl) = &app.rate_limit {
+        let rl_text = format!(
+            " search:{}/{} core:{}/{} ",
+            rl.search_remaining, rl.search_limit, rl.core_remaining, rl.core_limit
+        );
+        let right = Paragraph::new(rl_text)
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(ratatui::layout::Alignment::Right);
+        f.render_widget(right, area);
+    }
+
     let pairs: &[(&str, &str)] = match &app.state {
-        AppState::Searching => &[("Enter", "search"), ("Esc", "cancel")],
+        AppState::Searching => &[
+            ("Enter", "search"),
+            ("Tab", "language filter"),
+            ("Esc", "cancel"),
+        ],
         AppState::Browsing => &[
             ("/", "search"),
+            ("Tab", "language"),
             ("j/k", "nav"),
             ("J/K", "scroll readme"),
             ("l", "browse files"),
@@ -421,6 +460,7 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         section("search"),
         row("/", "focus search input"),
         row("Enter", "confirm search"),
+        row("Tab", "cycle language filter"),
         row("r", "refresh results"),
         Line::raw(""),
         section("navigation"),

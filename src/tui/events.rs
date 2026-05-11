@@ -48,6 +48,9 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
                 do_search(app, client).await;
             }
         }
+        KeyCode::Tab => {
+            app.cycle_language();
+        }
         KeyCode::Backspace => app.search_query.backspace(),
         KeyCode::Delete => app.search_query.delete(),
         KeyCode::Left => app.search_query.move_left(),
@@ -78,6 +81,12 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         }
         KeyCode::Char('K') => {
             app.readme_scroll = app.readme_scroll.saturating_sub(1);
+        }
+        KeyCode::Tab => {
+            app.cycle_language();
+            if !app.search_query.is_empty() {
+                do_search(app, client).await;
+            }
         }
         KeyCode::Char('r') => {
             if !app.search_query.is_empty() {
@@ -430,13 +439,21 @@ async fn do_search(app: &mut App, client: &GithubClient) {
     app.selected = 0;
     app.readme_content = None;
 
-    match client.search_repos(&query, lang.as_deref()).await {
+    let (search_result, rate_result) = tokio::join!(
+        client.search_repos(&query, lang.as_deref()),
+        client.get_rate_limit(),
+    );
+
+    match search_result {
         Ok(result) => {
             app.results = result.repos;
             app.set_status(format!("{} results", result.total_count));
             app.readme_pending = Some(Instant::now());
         }
         Err(e) => app.set_error(format!("search failed: {}", e)),
+    }
+    if let Ok(rl) = rate_result {
+        app.rate_limit = Some(rl);
     }
     app.loading = false;
 }
