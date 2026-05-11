@@ -80,6 +80,8 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
         KeyCode::Char('1') => {
             app.tab = Tab::Search;
             app.state = AppState::Browsing;
+            app.readme_content = None;
+            app.readme_scroll = 0;
         }
         KeyCode::Char('2') => {
             return switch_to_my_repos(app, client).await;
@@ -456,6 +458,8 @@ async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode)
 async fn switch_to_my_repos(app: &mut App, client: &GithubClient) -> Result<bool> {
     app.tab = Tab::MyRepos;
     app.state = AppState::MyRepos;
+    app.readme_content = None;
+    app.readme_scroll = 0;
     if app.my_repos.is_empty() {
         app.my_repos_loading = true;
         match client.list_my_repos().await {
@@ -463,6 +467,15 @@ async fn switch_to_my_repos(app: &mut App, client: &GithubClient) -> Result<bool
             Err(e) => app.set_error(format!("failed to load your repos: {}", e)),
         }
         app.my_repos_loading = false;
+    }
+    // show profile README if a repo named after the user exists
+    if let Some(login) = app.my_repos.first().map(|r| r.owner.clone()) {
+        let has_profile_repo = app.my_repos.iter().any(|r| r.name == login);
+        if has_profile_repo {
+            if let Ok(md) = client.get_readme(&login, &login).await {
+                app.readme_content = Some(md);
+            }
+        }
     }
     Ok(false)
 }
@@ -473,6 +486,8 @@ async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) ->
         KeyCode::Char('1') => {
             app.tab = Tab::Search;
             app.state = AppState::Browsing;
+            app.readme_content = None;
+            app.readme_scroll = 0;
         }
         KeyCode::Char('2') => {
             // refresh
