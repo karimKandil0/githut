@@ -117,13 +117,13 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             app.state = AppState::Help;
         }
         KeyCode::Char('c') => {
-            if app.selected_repo().is_some() {
+            if app.active_repo().is_some() {
                 app.prefill_clone_path();
                 app.state = AppState::Cloning;
             }
         }
         KeyCode::Char('C') => {
-            if app.selected_repo().is_some() {
+            if app.active_repo().is_some() {
                 app.prefill_sparse_path();
                 app.sparse_dirs_input.clear();
                 app.sparse_step = SparseStep::Path;
@@ -131,7 +131,7 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             }
         }
         KeyCode::Char('o') => {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let url = repo.html_url.clone();
                 if let Err(e) = open::that(&url) {
                     app.set_error(format!("failed to open browser: {}", e));
@@ -139,7 +139,7 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             }
         }
         KeyCode::Char('s') => {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 let full_name = repo.full_name.clone();
@@ -164,7 +164,7 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             }
         }
         KeyCode::Char('f') => {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 let full_name = repo.full_name.clone();
@@ -175,7 +175,7 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             }
         }
         KeyCode::Char('l') | KeyCode::Enter => {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 app.file_entries.clear();
@@ -201,12 +201,16 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
     match code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Esc | KeyCode::Char('h') if app.file_path_stack.is_empty() => {
-            app.state = AppState::Browsing;
+            app.state = if app.tab == Tab::MyRepos {
+                AppState::MyRepos
+            } else {
+                AppState::Browsing
+            };
             app.file_content = None;
         }
         KeyCode::Char('h') => {
             app.file_path_stack.pop();
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 let path = app.current_file_path().to_string();
@@ -222,7 +226,11 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
             }
         }
         KeyCode::Esc => {
-            app.state = AppState::Browsing;
+            app.state = if app.tab == Tab::MyRepos {
+                AppState::MyRepos
+            } else {
+                AppState::Browsing
+            };
             app.file_content = None;
         }
         KeyCode::Char('j') | KeyCode::Down => {
@@ -249,7 +257,7 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
             if let Some(entry) = app.selected_entry().cloned() {
                 match entry.entry_type {
                     EntryType::Dir => {
-                        if let Some(repo) = app.selected_repo() {
+                        if let Some(repo) = app.active_repo() {
                             let owner = repo.owner.clone();
                             let name = repo.name.clone();
                             app.file_path_stack.push(entry.path.clone());
@@ -265,7 +273,7 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
                         }
                     }
                     EntryType::File => {
-                        if let Some(repo) = app.selected_repo() {
+                        if let Some(repo) = app.active_repo() {
                             let owner = repo.owner.clone();
                             let name = repo.name.clone();
                             app.loading = true;
@@ -365,7 +373,7 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                 }
             }
             SparseStep::Dirs => {
-                if let Some(repo) = app.selected_repo() {
+                if let Some(repo) = app.active_repo() {
                     let url = repo.clone_url.clone();
                     let branch = repo.default_branch.clone();
                     let path = app.sparse_path_input.to_path();
@@ -417,7 +425,7 @@ async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode)
                 return Ok(false);
             }
             if let (Some(repo), Some(entry)) =
-                (app.selected_repo().cloned(), app.selected_entry().cloned())
+                (app.active_repo().cloned(), app.selected_entry().cloned())
             {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
