@@ -169,7 +169,17 @@ impl GithubClient {
             }
         }
 
-        // fallback: try download_url
+        // fallback for large files: fetch raw content via download_url
+        if let Some(url) = item.download_url {
+            let text = reqwest::get(&url)
+                .await
+                .context("download_url fetch failed")?
+                .text()
+                .await
+                .context("download_url read failed")?;
+            return Ok(text);
+        }
+
         Err(anyhow!("could not decode file content"))
     }
 
