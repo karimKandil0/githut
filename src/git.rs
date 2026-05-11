@@ -1,6 +1,5 @@
-use anyhow::{Context, Result};
-use git2::{FetchOptions, Repository};
-use std::path::Path;
+use anyhow::{anyhow, Context, Result};
+use git2::Repository;
 
 pub fn clone_repo(url: &str, path: &str) -> Result<()> {
     Repository::clone(url, path)
@@ -8,54 +7,53 @@ pub fn clone_repo(url: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Sparse clone: init repo, enable sparse checkout, fetch, checkout only `dirs`.
+/// Sparse clone using git CLI — reliable sparse checkout support.
 /// `dirs` is a slice of path patterns e.g. ["src", "docs"].
-pub fn sparse_clone(url: &str, path: &str, branch: &str, dirs: &[&str]) -> Result<()> {
-    let repo =
-        Repository::init(path).with_context(|| format!("failed to init repo at {}", path))?;
+pub fn sparse_clone(url: &str, path: &str, _branch: &str, dirs: &[&str]) -> Result<()> {
+    // git clone --no-checkout --filter=blob:none --sparse <url> <path>
+    let status = std::process::Command::new("git")
+        .args([
+            "clone",
+            "--no-checkout",
+            "--filter=blob:none",
+            "--sparse",
+            url,
+            path,
+        ])
+        .status()
+        .context("failed to run git clone")?;
 
-    // Add remote
-    let mut remote = repo.remote("origin", url).context("failed to add remote")?;
+    if !status.success() {
+        return Err(anyhow!("git clone failed"));
+    }
 
-    // Enable sparse checkout in config
-    let mut config = repo.config().context("failed to get repo config")?;
-    config
-        .set_bool("core.sparseCheckout", true)
-        .context("failed to set core.sparseCheckout")?;
+    if !dirs.is_empty() {
+        // git sparse-checkout set <dirs...>
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .arg("sparse-checkout")
+            .arg("set")
+            .args(dirs)
+            .status()
+            .context("failed to run git sparse-checkout set")?;
 
-    // Write sparse-checkout patterns
-    let sparse_file = Path::new(path).join(".git/info/sparse-checkout");
-    let patterns = if dirs.is_empty() {
-        "/*\n".to_string()
-    } else {
-        dirs.iter()
-            .map(|d| format!("{}\n", d.trim_matches('/')))
-            .collect::<String>()
-    };
-    std::fs::write(&sparse_file, &patterns).context("failed to write sparse-checkout file")?;
+        if !status.success() {
+            return Err(anyhow!("git sparse-checkout set failed"));
+        }
+    }
 
-    // Fetch
-    let refspec = format!("refs/heads/{}:refs/remotes/origin/{}", branch, branch);
-    let mut fetch_opts = FetchOptions::new();
-    remote
-        .fetch(&[&refspec], Some(&mut fetch_opts), None)
-        .context("fetch failed")?;
+    // git checkout
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .arg("checkout")
+        .status()
+        .context("failed to run git checkout")?;
 
-    // Find the fetched commit and set HEAD + checkout
-    let fetch_head = repo
-        .find_reference(&format!("refs/remotes/origin/{}", branch))
-        .context("failed to find fetched branch")?;
-    let commit = repo
-        .reference_to_annotated_commit(&fetch_head)
-        .context("failed to resolve commit")?;
-    let object = repo
-        .find_object(commit.id(), None)
-        .context("failed to find object")?;
-
-    repo.set_head(&format!("refs/heads/{}", branch))
-        .context("failed to set HEAD")?;
-    repo.checkout_tree(&object, None)
-        .context("checkout failed")?;
+    if !status.success() {
+        return Err(anyhow!("git checkout failed"));
+    }
 
     Ok(())
 }

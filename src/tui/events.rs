@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
             app.state = AppState::Browsing;
             Ok(false)
         }
-        AppState::Previewing | AppState::SparseCloning => Ok(false),
+        AppState::Previewing => Ok(false),
     }
 }
 
