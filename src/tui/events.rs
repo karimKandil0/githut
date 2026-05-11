@@ -7,7 +7,7 @@ use std::time::Instant;
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
-use crate::types::{AppState, EntryType};
+use crate::types::{AppState, EntryType, SparseStep};
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -28,6 +28,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::Browsing => handle_browsing(app, client, key.code).await,
         AppState::FileBrowsing => handle_file_browsing(app, client, key.code).await,
         AppState::Cloning => handle_cloning(app, key.code).await,
+        AppState::SparseCloning => handle_sparse_cloning(app, key.code).await,
         AppState::Error(_) | AppState::Help => {
             app.state = AppState::Browsing;
             Ok(false)
@@ -88,6 +89,14 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             if app.selected_repo().is_some() {
                 app.clone_path_input.clear();
                 app.state = AppState::Cloning;
+            }
+        }
+        KeyCode::Char('C') => {
+            if app.selected_repo().is_some() {
+                app.sparse_path_input.clear();
+                app.sparse_dirs_input.clear();
+                app.sparse_step = SparseStep::Path;
+                app.state = AppState::SparseCloning;
             }
         }
         KeyCode::Char('o') => {
@@ -270,6 +279,55 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
         KeyCode::Char(c) => {
             app.clone_path_input.push(c);
         }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Backspace => match app.sparse_step {
+            SparseStep::Path => {
+                app.sparse_path_input.pop();
+            }
+            SparseStep::Dirs => {
+                app.sparse_dirs_input.pop();
+            }
+        },
+        KeyCode::Enter => match app.sparse_step {
+            SparseStep::Path => {
+                if !app.sparse_path_input.trim().is_empty() {
+                    app.sparse_step = SparseStep::Dirs;
+                }
+            }
+            SparseStep::Dirs => {
+                if let Some(repo) = app.selected_repo() {
+                    let url = repo.clone_url.clone();
+                    let branch = repo.default_branch.clone();
+                    let path = app.sparse_path_input.trim().to_string();
+                    let dirs_raw = app.sparse_dirs_input.trim().to_string();
+                    let dirs: Vec<&str> = if dirs_raw.is_empty() {
+                        vec![]
+                    } else {
+                        dirs_raw.split_whitespace().collect()
+                    };
+                    let full_name = repo.full_name.clone();
+                    app.set_status(format!("sparse cloning {}...", full_name));
+                    app.state = AppState::Browsing;
+                    match git::sparse_clone(&url, &path, &branch, &dirs) {
+                        Ok(()) => app.set_status(format!("sparse cloned to {}", path)),
+                        Err(e) => app.set_error(format!("sparse clone failed: {}", e)),
+                    }
+                }
+            }
+        },
+        KeyCode::Char(c) => match app.sparse_step {
+            SparseStep::Path => app.sparse_path_input.push(c),
+            SparseStep::Dirs => app.sparse_dirs_input.push(c),
+        },
         _ => {}
     }
     Ok(false)

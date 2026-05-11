@@ -28,6 +28,12 @@ pub enum AppState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SparseStep {
+    Path,
+    Dirs,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum EntryType {
     File,
     Dir,

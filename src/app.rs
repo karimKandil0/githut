@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use crate::types::{AppState, FileEntry, Repo};
+use crate::types::{AppState, FileEntry, Repo, SparseStep};
 
 pub struct App {
     pub state: AppState,
@@ -22,6 +22,10 @@ pub struct App {
     pub file_scroll: u16,
     pub readme_pending: Option<Instant>,
     pub starred: HashSet<String>, // full_name of starred repos
+    // sparse clone
+    pub sparse_path_input: String,
+    pub sparse_dirs_input: String,
+    pub sparse_step: SparseStep,
 }
 
 impl App {
@@ -44,6 +48,9 @@ impl App {
             file_scroll: 0,
             readme_pending: None,
             starred: HashSet::new(),
+            sparse_path_input: String::new(),
+            sparse_dirs_input: String::new(),
+            sparse_step: SparseStep::Path,
         }
     }
 

@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown;
-use crate::types::{AppState, EntryType};
+use crate::types::{AppState, EntryType, SparseStep};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -57,6 +57,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         AppState::Cloning => {
             draw_input_overlay(f, area, "Clone path:", &app.clone_path_input.clone())
         }
+        AppState::SparseCloning => draw_sparse_overlay(f, area, app),
         _ => {}
     }
 }
@@ -199,6 +200,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("s", "star/unstar"),
             ("f", "fork"),
             ("c", "clone"),
+            ("C", "sparse clone"),
             ("o", "browser"),
             ("r", "refresh"),
             ("?", "help"),
@@ -212,7 +214,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("Esc", "back to repos"),
             ("q", "quit"),
         ],
-        AppState::Cloning => &[("Enter", "confirm"), ("Esc", "cancel")],
+        AppState::Cloning | AppState::SparseCloning => &[("Enter", "confirm"), ("Esc", "cancel")],
         AppState::Error(_) => &[("any key", "dismiss")],
         AppState::Help => &[("any key", "close")],
         _ => &[("q", "quit")],
@@ -330,6 +332,42 @@ fn draw_file_content(f: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false })
         .scroll((app.file_scroll, 0));
     f.render_widget(para, inner);
+}
+
+fn draw_sparse_overlay(f: &mut Frame, area: Rect, app: &App) {
+    let popup = centered_rect(55, 25, area);
+    f.render_widget(Clear, popup);
+
+    let (title, input, hint) = match app.sparse_step {
+        SparseStep::Path => (
+            "Sparse clone — step 1/2: path",
+            app.sparse_path_input.as_str(),
+            "Enter destination path, then press Enter",
+        ),
+        SparseStep::Dirs => (
+            "Sparse clone — step 2/2: directories",
+            app.sparse_dirs_input.as_str(),
+            "Space-separated dirs (e.g. src docs). Leave empty for all.",
+        ),
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(inner);
+
+    f.render_widget(Paragraph::new(format!("{}_", input)), layout[0]);
+    f.render_widget(
+        Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
+        layout[1],
+    );
 }
 
 fn draw_error_overlay(f: &mut Frame, area: Rect, msg: &str) {
