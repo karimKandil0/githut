@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
-use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep, Tab};
+use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep, Tab, UserProfile};
 
 pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
     None,
@@ -49,6 +49,12 @@ pub struct App {
     pub my_repos_selected: usize,
     pub my_repos_loading: bool,
     pub rename_input: TextInput,
+    // profile view
+    pub profile_user: Option<UserProfile>,
+    pub profile_repos: Vec<Repo>,
+    pub profile_repos_selected: usize,
+    pub profile_loading: bool,
+    pub prev_state: Option<AppState>, // state before entering FileBrowsing
     // sparse clone
     pub sparse_path_input: TextInput,
     pub sparse_dirs_input: TextInput,
@@ -90,6 +96,11 @@ impl App {
             my_repos_selected: 0,
             my_repos_loading: false,
             rename_input: TextInput::new(),
+            profile_user: None,
+            profile_repos: Vec::new(),
+            profile_repos_selected: 0,
+            profile_loading: false,
+            prev_state: None,
             sparse_path_input: TextInput::new(),
             sparse_dirs_input: TextInput::new(),
             sparse_step: SparseStep::Path,
@@ -109,6 +120,34 @@ impl App {
                 self.clone_path_input.insert(c);
             }
         }
+    }
+
+    pub fn profile_next(&mut self) {
+        if self.profile_repos.is_empty() {
+            return;
+        }
+        self.profile_repos_selected = (self.profile_repos_selected + 1) % self.profile_repos.len();
+        self.readme_content = None;
+        self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
+    }
+
+    pub fn profile_prev(&mut self) {
+        if self.profile_repos.is_empty() {
+            return;
+        }
+        if self.profile_repos_selected == 0 {
+            self.profile_repos_selected = self.profile_repos.len() - 1;
+        } else {
+            self.profile_repos_selected -= 1;
+        }
+        self.readme_content = None;
+        self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
+    }
+
+    pub fn selected_profile_repo(&self) -> Option<&Repo> {
+        self.profile_repos.get(self.profile_repos_selected)
     }
 
     pub fn my_repos_next(&mut self) {
@@ -196,8 +235,14 @@ impl App {
         self.results.get(self.selected)
     }
 
-    /// Returns the active repo regardless of which tab is open.
+    /// Returns the active repo regardless of which tab/state is active.
     pub fn active_repo(&self) -> Option<&Repo> {
+        // in profile view, or file-browsing that originated from profile
+        let from_profile = matches!(self.state, AppState::ViewingProfile)
+            || matches!(&self.prev_state, Some(AppState::ViewingProfile));
+        if from_profile {
+            return self.profile_repos.get(self.profile_repos_selected);
+        }
         match self.tab {
             Tab::MyRepos => self.my_repos.get(self.my_repos_selected),
             Tab::Search => self.results.get(self.selected),

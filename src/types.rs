@@ -35,6 +35,7 @@ pub enum AppState {
     MyRepos,
     Renaming,
     ConfirmDelete,
+    ViewingProfile,
     Error(String),
     Help,
 }
@@ -62,6 +63,17 @@ pub struct FileEntry {
 pub struct SearchResult {
     pub repos: Vec<Repo>,
     pub total_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserProfile {
+    pub login: String,
+    pub name: Option<String>,
+    pub bio: Option<String>,
+    pub followers: u64,
+    pub following: u64,
+    pub public_repos: u64,
+    pub html_url: String,
 }
 
 #[derive(Debug, Clone)]

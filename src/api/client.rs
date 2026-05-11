@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use octocrab::Octocrab;
 use serde::Deserialize;
 
-use crate::types::{EntryType, FileEntry, RateLimit, Repo, SearchResult};
+use crate::types::{EntryType, FileEntry, RateLimit, Repo, SearchResult, UserProfile};
 
 pub struct GithubClient {
     inner: Octocrab,
@@ -278,6 +278,65 @@ impl GithubClient {
             .await
             .context("set archived request failed")?;
         Ok(())
+    }
+
+    pub async fn get_user_profile(&self, login: &str) -> Result<UserProfile> {
+        #[derive(Deserialize)]
+        struct ProfileResponse {
+            login: String,
+            name: Option<String>,
+            bio: Option<String>,
+            followers: u64,
+            following: u64,
+            public_repos: u64,
+            html_url: String,
+        }
+        let resp: ProfileResponse = self
+            .inner
+            .get(format!("/users/{}", login), None::<&()>)
+            .await
+            .context("user profile request failed")?;
+        Ok(UserProfile {
+            login: resp.login,
+            name: resp.name,
+            bio: resp.bio,
+            followers: resp.followers,
+            following: resp.following,
+            public_repos: resp.public_repos,
+            html_url: resp.html_url,
+        })
+    }
+
+    pub async fn list_user_repos(&self, login: &str) -> Result<Vec<Repo>> {
+        let items: Vec<RepoItem> = self
+            .inner
+            .get(
+                format!(
+                    "/users/{}/repos?sort=updated&per_page=100&type=owner",
+                    login
+                ),
+                None::<&()>,
+            )
+            .await
+            .context("list user repos request failed")?;
+        Ok(items
+            .into_iter()
+            .map(|item| Repo {
+                id: item.id,
+                full_name: item.full_name,
+                name: item.name,
+                owner: item.owner.login,
+                description: item.description,
+                language: item.language,
+                stargazers_count: item.stargazers_count,
+                forks_count: item.forks_count,
+                html_url: item.html_url,
+                clone_url: item.clone_url,
+                default_branch: item.default_branch,
+                archived: item.archived,
+                fork: item.fork,
+            })
+            .collect())
     }
 
     pub async fn get_rate_limit(&self) -> Result<RateLimit> {

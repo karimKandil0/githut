@@ -41,6 +41,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if matches!(app.state, AppState::FileBrowsing) {
         draw_file_browser(f, app, left_area);
         draw_file_content(f, app, right_area);
+    } else if matches!(app.state, AppState::ViewingProfile) {
+        let left_split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(6), Constraint::Min(0)])
+            .split(left_area);
+        draw_profile_header(f, app, left_split[0]);
+        draw_profile_repos(f, app, left_split[1]);
+        draw_readme(f, app, right_area);
     } else if app.tab == Tab::MyRepos {
         // Left: search bar replaced by my repos header + list
         let left_split = Layout::default()
@@ -94,6 +102,139 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         _ => {}
     }
+}
+
+fn draw_profile_header(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(profile) = &app.profile_user else {
+        let loading = if app.profile_loading {
+            "Loading profile..."
+        } else {
+            ""
+        };
+        f.render_widget(
+            Paragraph::new(loading).style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    };
+
+    let name_line = Line::from(vec![
+        Span::styled(
+            profile.login.clone(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        if let Some(name) = &profile.name {
+            Span::styled(format!("  ({})", name), Style::default().fg(Color::White))
+        } else {
+            Span::raw("")
+        },
+    ]);
+
+    let stats_line = Line::from(Span::styled(
+        format!(
+            "repos: {}  followers: {}  following: {}",
+            profile.public_repos, profile.followers, profile.following
+        ),
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    let mut lines = vec![name_line, stats_line];
+    if let Some(bio) = &profile.bio {
+        if !bio.is_empty() {
+            lines.push(Line::from(Span::styled(
+                bio.chars().take(80).collect::<String>(),
+                Style::default().fg(Color::White),
+            )));
+        }
+    }
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn draw_profile_repos(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<ListItem> = app
+        .profile_repos
+        .iter()
+        .map(|repo| {
+            let lang = repo.language.as_deref().unwrap_or("—");
+            let stars = format_stars(repo.stargazers_count);
+            let is_starred = app.starred.contains(&repo.full_name);
+
+            let star_span = if is_starred {
+                Span::styled("★ ", Style::default().fg(Color::Yellow))
+            } else {
+                Span::styled("  ", Style::default())
+            };
+
+            let mut badges = String::new();
+            if repo.archived {
+                badges.push_str("[archived] ");
+            }
+            if repo.fork {
+                badges.push_str("[fork] ");
+            }
+
+            let line1 = Line::from(vec![
+                star_span,
+                Span::styled(
+                    format!("{:<38}", repo.name),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("{:<12}", lang), Style::default().fg(Color::Green)),
+                Span::styled(stars, Style::default().fg(Color::Yellow)),
+            ]);
+            let desc = repo
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .chars()
+                .take(60)
+                .collect::<String>();
+            let line2 = Line::from(vec![
+                Span::styled(
+                    format!("  {}", badges),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(desc, Style::default().fg(Color::DarkGray)),
+            ]);
+            ListItem::new(vec![line1, line2])
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.profile_repos.is_empty() {
+        state.select(Some(app.profile_repos_selected));
+    }
+
+    let login = app
+        .profile_user
+        .as_ref()
+        .map(|p| p.login.as_str())
+        .unwrap_or("user");
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(format!(
+            "{}'s repos ({})",
+            login,
+            app.profile_repos.len()
+        )))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -381,6 +522,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("j/k", "nav"),
             ("J/K", "scroll readme"),
             ("l", "browse files"),
+            ("u", "view profile"),
             ("s", "star/unstar"),
             ("f", "fork"),
             ("c", "clone"),
@@ -403,11 +545,23 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("j/k", "nav"),
             ("J/K", "scroll readme"),
             ("l", "browse files"),
+            ("u", "view profile"),
             ("c", "clone"),
             ("R", "rename"),
             ("D", "delete"),
             ("A", "archive"),
             ("o", "browser"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
+        AppState::ViewingProfile => &[
+            ("j/k", "nav"),
+            ("J/K", "scroll readme"),
+            ("l", "browse files"),
+            ("u", "go to owner"),
+            ("c", "clone"),
+            ("o", "open profile"),
+            ("Esc/h", "back"),
             ("?", "help"),
             ("q", "quit"),
         ],
@@ -642,6 +796,10 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         row("l / Enter", "enter dir / preview file"),
         row("c", "save file to local path"),
         row("h", "go up one dir"),
+        Line::raw(""),
+        section("profile view (u on any repo)"),
+        row("u", "go to that repo's owner"),
+        row("o", "open profile in browser"),
         Line::raw(""),
         section("my repos (tab 2)"),
         row("R", "rename repo"),

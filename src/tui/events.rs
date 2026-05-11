@@ -33,6 +33,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::FileSaving => handle_file_saving(app, client, key.code).await,
         AppState::Renaming => handle_renaming(app, client, key.code).await,
         AppState::ConfirmDelete => handle_confirm_delete(app, client, key.code).await,
+        AppState::ViewingProfile => handle_viewing_profile(app, client, key.code).await,
         AppState::Error(_) | AppState::Help => {
             // return to correct state based on tab
             app.state = if app.tab == Tab::MyRepos {
@@ -174,6 +175,12 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 }
             }
         }
+        KeyCode::Char('u') => {
+            if let Some(repo) = app.active_repo() {
+                let login = repo.owner.clone();
+                open_profile(app, client, &login).await;
+            }
+        }
         KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
@@ -184,6 +191,7 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 app.file_content = None;
                 app.file_scroll = 0;
                 app.loading = true;
+                app.prev_state = None;
                 app.state = AppState::FileBrowsing;
                 match client.get_contents(&owner, &name, "").await {
                     Ok(entries) => app.file_entries = entries,
@@ -201,10 +209,10 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
     match code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Esc | KeyCode::Char('h') if app.file_path_stack.is_empty() => {
-            app.state = if app.tab == Tab::MyRepos {
-                AppState::MyRepos
-            } else {
-                AppState::Browsing
+            app.state = match app.prev_state.take() {
+                Some(AppState::ViewingProfile) => AppState::ViewingProfile,
+                _ if app.tab == Tab::MyRepos => AppState::MyRepos,
+                _ => AppState::Browsing,
             };
             app.file_content = None;
         }
@@ -226,10 +234,10 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
             }
         }
         KeyCode::Esc => {
-            app.state = if app.tab == Tab::MyRepos {
-                AppState::MyRepos
-            } else {
-                AppState::Browsing
+            app.state = match app.prev_state.take() {
+                Some(AppState::ViewingProfile) => AppState::ViewingProfile,
+                _ if app.tab == Tab::MyRepos => AppState::MyRepos,
+                _ => AppState::Browsing,
             };
             app.file_content = None;
         }
@@ -544,12 +552,19 @@ async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 app.file_content = None;
                 app.file_scroll = 0;
                 app.loading = true;
+                app.prev_state = None;
                 app.state = AppState::FileBrowsing;
                 match client.get_contents(&owner, &name, "").await {
                     Ok(entries) => app.file_entries = entries,
                     Err(e) => app.set_error(format!("failed to load files: {}", e)),
                 }
                 app.loading = false;
+            }
+        }
+        KeyCode::Char('u') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let login = repo.owner.clone();
+                open_profile(app, client, &login).await;
             }
         }
         KeyCode::Char('R') => {
@@ -657,6 +672,113 @@ async fn handle_confirm_delete(
                     Err(e) => app.set_error(format!("delete failed: {}", e)),
                 }
             }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn open_profile(app: &mut App, client: &GithubClient, login: &str) {
+    app.profile_loading = true;
+    app.profile_user = None;
+    app.profile_repos.clear();
+    app.profile_repos_selected = 0;
+    app.readme_content = None;
+    app.readme_scroll = 0;
+
+    let (profile_result, repos_result) = tokio::join!(
+        client.get_user_profile(login),
+        client.list_user_repos(login),
+    );
+
+    match profile_result {
+        Ok(profile) => app.profile_user = Some(profile),
+        Err(e) => {
+            app.set_error(format!("failed to load profile: {}", e));
+            app.profile_loading = false;
+            return;
+        }
+    }
+    match repos_result {
+        Ok(repos) => {
+            app.profile_repos = repos;
+            app.readme_pending = Some(Instant::now());
+        }
+        Err(e) => app.set_error(format!("failed to load user repos: {}", e)),
+    }
+
+    app.profile_loading = false;
+    app.state = AppState::ViewingProfile;
+}
+
+async fn handle_viewing_profile(
+    app: &mut App,
+    client: &GithubClient,
+    code: KeyCode,
+) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.state = if app.tab == Tab::MyRepos {
+                AppState::MyRepos
+            } else {
+                AppState::Browsing
+            };
+            app.readme_content = None;
+            app.readme_scroll = 0;
+        }
+        KeyCode::Char('j') | KeyCode::Down => app.profile_next(),
+        KeyCode::Char('k') | KeyCode::Up => app.profile_prev(),
+        KeyCode::Char('J') => {
+            app.readme_scroll = app.readme_scroll.saturating_add(1);
+        }
+        KeyCode::Char('K') => {
+            app.readme_scroll = app.readme_scroll.saturating_sub(1);
+        }
+        KeyCode::Char('u') => {
+            // navigate to the owner of the selected profile repo (follow the rabbit hole)
+            if let Some(repo) = app.selected_profile_repo() {
+                let login = repo.owner.clone();
+                if app.profile_user.as_ref().map(|p| &p.login) != Some(&login) {
+                    open_profile(app, client, &login).await;
+                }
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(profile) = &app.profile_user {
+                let url = profile.html_url.clone();
+                if let Err(e) = open::that(&url) {
+                    app.set_error(format!("failed to open browser: {}", e));
+                }
+            }
+        }
+        KeyCode::Char('c') => {
+            if app.selected_profile_repo().is_some() {
+                app.prefill_clone_path();
+                app.state = AppState::Cloning;
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(repo) = app.selected_profile_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.file_entries.clear();
+                app.file_selected = 0;
+                app.file_path_stack.clear();
+                app.file_content = None;
+                app.file_scroll = 0;
+                app.loading = true;
+                app.prev_state = Some(AppState::ViewingProfile);
+                app.state = AppState::FileBrowsing;
+                match client.get_contents(&owner, &name, "").await {
+                    Ok(entries) => app.file_entries = entries,
+                    Err(e) => app.set_error(format!("failed to load files: {}", e)),
+                }
+                app.loading = false;
+            }
+        }
+        KeyCode::Char('?') => {
+            app.state = AppState::Help;
         }
         _ => {}
     }
