@@ -7,7 +7,7 @@ use std::time::Instant;
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
-use crate::types::{AppState, EntryType, SparseStep, Tab};
+use crate::types::{AppState, EntryType, IssueFilter, IssueTab, SparseStep, Tab};
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -44,6 +44,10 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
             Ok(false)
         }
         AppState::Previewing => Ok(false),
+        AppState::ViewingIssues => handle_viewing_issues(app, key.code, client).await,
+        AppState::ViewingIssue => handle_viewing_issue(app, key.code).await,
+        AppState::CreatingIssue => handle_creating_issue(app, key.code, client).await,
+        AppState::ViewingNotifications => handle_viewing_notifications(app, key.code, client).await,
     }
 }
 
@@ -54,6 +58,9 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
         }
         KeyCode::Char('2') => {
             return switch_to_my_repos(app, client).await;
+        }
+        KeyCode::Char('3') => {
+            open_notifications(app, client).await;
         }
         KeyCode::Enter => {
             if !app.search_query.is_empty() {
@@ -180,6 +187,16 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 let login = repo.owner.clone();
                 open_profile(app, client, &login).await;
             }
+        }
+        KeyCode::Char('i') => {
+            if let Some(repo) = app.active_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                open_issues(app, client, &owner, &name).await;
+            }
+        }
+        KeyCode::Char('3') => {
+            open_notifications(app, client).await;
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(repo) = app.active_repo() {
@@ -601,6 +618,16 @@ async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 }
             }
         }
+        KeyCode::Char('i') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                open_issues(app, client, &owner, &name).await;
+            }
+        }
+        KeyCode::Char('3') => {
+            open_notifications(app, client).await;
+        }
         _ => {}
     }
     Ok(false)
@@ -777,6 +804,16 @@ async fn handle_viewing_profile(
                 app.loading = false;
             }
         }
+        KeyCode::Char('i') => {
+            if let Some(repo) = app.selected_profile_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                open_issues(app, client, &owner, &name).await;
+            }
+        }
+        KeyCode::Char('3') => {
+            open_notifications(app, client).await;
+        }
         KeyCode::Char('?') => {
             app.state = AppState::Help;
         }
@@ -810,4 +847,378 @@ async fn do_search(app: &mut App, client: &GithubClient) {
         app.rate_limit = Some(rl);
     }
     app.loading = false;
+}
+
+async fn open_issues(app: &mut App, client: &GithubClient, owner: &str, name: &str) {
+    app.issues_loading = true;
+    app.issues.clear();
+    app.issues_selected = 0;
+    app.current_issue = None;
+    app.issue_comments.clear();
+    app.issue_scroll = 0;
+    let is_pr = app.issue_tab == IssueTab::PullRequests;
+    match client
+        .list_issues(owner, name, &app.issue_filter, is_pr)
+        .await
+    {
+        Ok(issues) => app.issues = issues,
+        Err(e) => {
+            app.set_error(format!("failed to load issues: {}", e));
+            app.issues_loading = false;
+            return;
+        }
+    }
+    app.issues_loading = false;
+    app.state = AppState::ViewingIssues;
+}
+
+async fn open_notifications(app: &mut App, client: &GithubClient) {
+    app.notifications_loading = true;
+    app.notifications.clear();
+    app.notifications_selected = 0;
+    match client
+        .list_notifications(app.notifications_unread_only)
+        .await
+    {
+        Ok(notifs) => app.notifications = notifs,
+        Err(e) => {
+            app.set_error(format!("failed to load notifications: {}", e));
+            app.notifications_loading = false;
+            return;
+        }
+    }
+    app.notifications_loading = false;
+    app.state = AppState::ViewingNotifications;
+}
+
+async fn handle_viewing_issues(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.state = match app.tab {
+                Tab::MyRepos => AppState::MyRepos,
+                Tab::Search => AppState::Browsing,
+            };
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if !app.issues.is_empty() {
+                app.issues_selected = (app.issues_selected + 1) % app.issues.len();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if !app.issues.is_empty() {
+                if app.issues_selected == 0 {
+                    app.issues_selected = app.issues.len() - 1;
+                } else {
+                    app.issues_selected -= 1;
+                }
+            }
+        }
+        KeyCode::Char('J') => {
+            app.issue_scroll = app.issue_scroll.saturating_add(1);
+        }
+        KeyCode::Char('K') => {
+            app.issue_scroll = app.issue_scroll.saturating_sub(1);
+        }
+        // Tab: switch between Issues and PRs
+        KeyCode::Tab => {
+            app.issue_tab = match app.issue_tab {
+                IssueTab::Issues => IssueTab::PullRequests,
+                IssueTab::PullRequests => IssueTab::Issues,
+            };
+            if let Some(repo) = app.active_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let is_pr = app.issue_tab == IssueTab::PullRequests;
+                app.issues_loading = true;
+                app.issues.clear();
+                app.issues_selected = 0;
+                match client
+                    .list_issues(&owner, &name, &app.issue_filter, is_pr)
+                    .await
+                {
+                    Ok(issues) => app.issues = issues,
+                    Err(e) => app.set_error(format!("failed to load: {}", e)),
+                }
+                app.issues_loading = false;
+            }
+        }
+        // f: cycle filter (open/closed/all)
+        KeyCode::Char('f') => {
+            app.issue_filter = app.issue_filter.next();
+            if let Some(repo) = app.active_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let is_pr = app.issue_tab == IssueTab::PullRequests;
+                app.issues_loading = true;
+                app.issues.clear();
+                app.issues_selected = 0;
+                match client
+                    .list_issues(&owner, &name, &app.issue_filter, is_pr)
+                    .await
+                {
+                    Ok(issues) => app.issues = issues,
+                    Err(e) => app.set_error(format!("failed to load: {}", e)),
+                }
+                app.issues_loading = false;
+            }
+        }
+        // n: new issue
+        KeyCode::Char('n') => {
+            if app.issue_tab == IssueTab::Issues {
+                app.new_issue_title.clear();
+                app.new_issue_body.clear();
+                app.new_issue_focus_body = false;
+                app.state = AppState::CreatingIssue;
+            }
+        }
+        // x: close selected issue
+        KeyCode::Char('x') => {
+            if let Some(issue) = app.issues.get(app.issues_selected) {
+                if !issue.pull_request && issue.state == "open" {
+                    let number = issue.number;
+                    if let Some(repo) = app.active_repo() {
+                        let owner = repo.owner.clone();
+                        let name = repo.name.clone();
+                        match client.close_issue(&owner, &name, number).await {
+                            Ok(()) => {
+                                if let Some(i) = app.issues.get_mut(app.issues_selected) {
+                                    i.state = "closed".to_string();
+                                }
+                                app.set_status(format!("closed #{}", number));
+                            }
+                            Err(e) => app.set_error(format!("close failed: {}", e)),
+                        }
+                    }
+                }
+            }
+        }
+        // Enter/l: open issue to read body + comments
+        KeyCode::Enter | KeyCode::Char('l') => {
+            if let Some(issue) = app.issues.get(app.issues_selected).cloned() {
+                let number = issue.number;
+                app.current_issue = Some(issue);
+                app.issue_comments.clear();
+                app.issue_scroll = 0;
+                if let Some(repo) = app.active_repo() {
+                    let owner = repo.owner.clone();
+                    let name = repo.name.clone();
+                    match client.get_issue_comments(&owner, &name, number).await {
+                        Ok(comments) => app.issue_comments = comments,
+                        Err(e) => app.set_error(format!("failed to load comments: {}", e)),
+                    }
+                }
+                app.state = AppState::ViewingIssue;
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(issue) = app.issues.get(app.issues_selected) {
+                let url = issue.html_url.clone();
+                if let Err(e) = open::that(&url) {
+                    app.set_error(format!("failed to open browser: {}", e));
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_viewing_issue(app: &mut App, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.current_issue = None;
+            app.issue_scroll = 0;
+            app.state = AppState::ViewingIssues;
+        }
+        KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('J') => {
+            app.issue_scroll = app.issue_scroll.saturating_add(1);
+        }
+        KeyCode::Char('k') | KeyCode::Up | KeyCode::Char('K') => {
+            app.issue_scroll = app.issue_scroll.saturating_sub(1);
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_creating_issue(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::ViewingIssues;
+        }
+        KeyCode::Tab => {
+            app.new_issue_focus_body = !app.new_issue_focus_body;
+        }
+        KeyCode::Backspace => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.backspace();
+            } else {
+                app.new_issue_title.backspace();
+            }
+        }
+        KeyCode::Delete => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.delete();
+            } else {
+                app.new_issue_title.delete();
+            }
+        }
+        KeyCode::Left => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.move_left();
+            } else {
+                app.new_issue_title.move_left();
+            }
+        }
+        KeyCode::Right => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.move_right();
+            } else {
+                app.new_issue_title.move_right();
+            }
+        }
+        KeyCode::Home => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.move_home();
+            } else {
+                app.new_issue_title.move_home();
+            }
+        }
+        KeyCode::End => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.move_end();
+            } else {
+                app.new_issue_title.move_end();
+            }
+        }
+        KeyCode::Char(c) => {
+            if app.new_issue_focus_body {
+                app.new_issue_body.insert(c);
+            } else {
+                app.new_issue_title.insert(c);
+            }
+        }
+        KeyCode::Enter => {
+            if !app.new_issue_focus_body {
+                // Enter on title field: switch focus to body
+                app.new_issue_focus_body = true;
+            } else {
+                let title = app.new_issue_title.as_str().trim().to_string();
+                if title.is_empty() {
+                    app.set_error("title cannot be empty");
+                    return Ok(false);
+                }
+                let body = app.new_issue_body.as_str().trim().to_string();
+                if let Some(repo) = app.active_repo() {
+                    let owner = repo.owner.clone();
+                    let name = repo.name.clone();
+                    match client.create_issue(&owner, &name, &title, &body).await {
+                        Ok(number) => {
+                            app.set_status(format!("created issue #{}", number));
+                            // reload issues list
+                            let is_pr = app.issue_tab == IssueTab::PullRequests;
+                            if let Ok(issues) = client
+                                .list_issues(&owner, &name, &app.issue_filter, is_pr)
+                                .await
+                            {
+                                app.issues = issues;
+                                app.issues_selected = 0;
+                            }
+                            app.state = AppState::ViewingIssues;
+                        }
+                        Err(e) => app.set_error(format!("create issue failed: {}", e)),
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_viewing_notifications(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.state = match app.tab {
+                Tab::MyRepos => AppState::MyRepos,
+                Tab::Search => AppState::Browsing,
+            };
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if !app.notifications.is_empty() {
+                app.notifications_selected =
+                    (app.notifications_selected + 1) % app.notifications.len();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if !app.notifications.is_empty() {
+                if app.notifications_selected == 0 {
+                    app.notifications_selected = app.notifications.len() - 1;
+                } else {
+                    app.notifications_selected -= 1;
+                }
+            }
+        }
+        // r: mark selected as read
+        KeyCode::Char('r') => {
+            if let Some(notif) = app.notifications.get(app.notifications_selected).cloned() {
+                match client.mark_notification_read(&notif.id).await {
+                    Ok(()) => {
+                        if let Some(n) = app.notifications.get_mut(app.notifications_selected) {
+                            n.unread = false;
+                        }
+                        app.set_status("marked as read");
+                    }
+                    Err(e) => app.set_error(format!("mark read failed: {}", e)),
+                }
+            }
+        }
+        // R: mark all as read
+        KeyCode::Char('R') => match client.mark_all_notifications_read().await {
+            Ok(()) => {
+                for n in &mut app.notifications {
+                    n.unread = false;
+                }
+                app.set_status("all marked as read");
+            }
+            Err(e) => app.set_error(format!("mark all read failed: {}", e)),
+        },
+        // f: toggle unread-only filter
+        KeyCode::Char('f') => {
+            app.notifications_unread_only = !app.notifications_unread_only;
+            open_notifications(app, client).await;
+        }
+        // o: open in browser
+        KeyCode::Char('o') => {
+            if let Some(notif) = app.notifications.get(app.notifications_selected) {
+                if let Some(url) = &notif.subject_url {
+                    // GitHub API gives API urls; convert to html url best-effort
+                    let html_url = url
+                        .replace("api.github.com/repos", "github.com")
+                        .replace("/pulls/", "/pull/")
+                        .replace("/issues/", "/issues/");
+                    if let Err(e) = open::that(&html_url) {
+                        app.set_error(format!("failed to open browser: {}", e));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
 }

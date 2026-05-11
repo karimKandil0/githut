@@ -4,7 +4,10 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
-use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep, Tab, UserProfile};
+use crate::types::{
+    AppState, FileEntry, Issue, IssueComment, IssueFilter, IssueTab, Notification, RateLimit, Repo,
+    SparseStep, Tab, UserProfile,
+};
 
 pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
     None,
@@ -61,6 +64,23 @@ pub struct App {
     pub sparse_step: SparseStep,
     // file save
     pub file_save_path_input: TextInput,
+    // issues / PRs
+    pub issues: Vec<Issue>,
+    pub issues_selected: usize,
+    pub issue_tab: IssueTab,
+    pub issue_filter: IssueFilter,
+    pub issues_loading: bool,
+    pub current_issue: Option<Issue>,
+    pub issue_comments: Vec<IssueComment>,
+    pub issue_scroll: u16,
+    pub new_issue_title: TextInput,
+    pub new_issue_body: TextInput,
+    pub new_issue_focus_body: bool, // false = title focused, true = body focused
+    // notifications
+    pub notifications: Vec<Notification>,
+    pub notifications_selected: usize,
+    pub notifications_loading: bool,
+    pub notifications_unread_only: bool,
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
@@ -105,6 +125,21 @@ impl App {
             sparse_dirs_input: TextInput::new(),
             sparse_step: SparseStep::Path,
             file_save_path_input: TextInput::new(),
+            issues: Vec::new(),
+            issues_selected: 0,
+            issue_tab: IssueTab::Issues,
+            issue_filter: IssueFilter::Open,
+            issues_loading: false,
+            current_issue: None,
+            issue_comments: Vec::new(),
+            issue_scroll: 0,
+            new_issue_title: TextInput::new(),
+            new_issue_body: TextInput::new(),
+            new_issue_focus_body: false,
+            notifications: Vec::new(),
+            notifications_selected: 0,
+            notifications_loading: false,
+            notifications_unread_only: true,
             bg_tx,
             bg_rx,
             config,

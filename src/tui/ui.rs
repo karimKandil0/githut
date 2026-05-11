@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown;
-use crate::types::{AppState, EntryType, SparseStep, Tab};
+use crate::types::{AppState, EntryType, IssueTab, SparseStep, Tab};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -38,7 +38,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let left_area = panes[0];
     let right_area = panes[1];
 
-    if matches!(app.state, AppState::FileBrowsing) {
+    if matches!(app.state, AppState::ViewingIssues) {
+        draw_issues_list(f, app, left_area);
+        draw_issue_preview(f, app, right_area);
+    } else if matches!(app.state, AppState::ViewingIssue) {
+        draw_issues_list(f, app, left_area);
+        draw_issue_detail(f, app, right_area);
+    } else if matches!(app.state, AppState::ViewingNotifications) {
+        draw_notifications(f, app, main_area);
+    } else if matches!(app.state, AppState::FileBrowsing) {
         draw_file_browser(f, app, left_area);
         draw_file_content(f, app, right_area);
     } else if matches!(app.state, AppState::ViewingProfile) {
@@ -100,6 +108,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 .unwrap_or("this repo");
             draw_confirm_overlay(f, area, &format!("Delete {}? (y/n)", name));
         }
+        AppState::CreatingIssue => draw_create_issue_overlay(f, area, app),
         _ => {}
     }
 }
@@ -238,9 +247,11 @@ fn draw_profile_repos(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
+    let notifs_active = matches!(app.state, AppState::ViewingNotifications);
     let tabs = vec![
-        ("1", "Search", app.tab == Tab::Search),
-        ("2", "My Repos", app.tab == Tab::MyRepos),
+        ("1", "Search", app.tab == Tab::Search && !notifs_active),
+        ("2", "My Repos", app.tab == Tab::MyRepos && !notifs_active),
+        ("3", "Notifications", notifs_active),
     ];
     let mut spans = vec![Span::raw(" ")];
     for (key, label, active) in tabs {
@@ -522,6 +533,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("j/k", "nav"),
             ("J/K", "scroll readme"),
             ("l", "browse files"),
+            ("i", "issues/PRs"),
             ("u", "view profile"),
             ("s", "star/unstar"),
             ("f", "fork"),
@@ -529,6 +541,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("C", "sparse clone"),
             ("o", "browser"),
             ("r", "refresh"),
+            ("3", "notifications"),
             ("?", "help"),
             ("q", "quit"),
         ],
@@ -564,6 +577,37 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("Esc/h", "back"),
             ("?", "help"),
             ("q", "quit"),
+        ],
+        AppState::ViewingIssues => &[
+            ("j/k", "nav"),
+            ("l/Enter", "open issue"),
+            ("Tab", "issues/PRs"),
+            ("f", "filter open/closed/all"),
+            ("n", "new issue"),
+            ("x", "close issue"),
+            ("o", "browser"),
+            ("Esc/h", "back"),
+            ("q", "quit"),
+        ],
+        AppState::ViewingIssue => &[
+            ("j/k/J/K", "scroll"),
+            ("Esc/h", "back to list"),
+            ("q", "quit"),
+        ],
+        AppState::ViewingNotifications => &[
+            ("j/k", "nav"),
+            ("r", "mark read"),
+            ("R", "mark all read"),
+            ("f", "toggle unread filter"),
+            ("o", "browser"),
+            ("Esc/h", "back"),
+            ("q", "quit"),
+        ],
+        AppState::CreatingIssue => &[
+            ("Tab", "switch title/body"),
+            ("Enter (title)", "go to body"),
+            ("Enter (body)", "submit"),
+            ("Esc", "cancel"),
         ],
         AppState::Cloning | AppState::SparseCloning | AppState::FileSaving | AppState::Renaming => {
             &[("Enter", "confirm"), ("Esc", "cancel")]
@@ -806,8 +850,21 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         row("D", "delete repo (confirms y/n)"),
         row("A", "archive / unarchive"),
         Line::raw(""),
+        section("issues & PRs (i on any repo)"),
+        row("Tab", "toggle issues / PRs"),
+        row("f", "cycle filter open/closed/all"),
+        row("n", "create new issue"),
+        row("x", "close selected issue"),
+        row("l/Enter", "open issue + comments"),
+        Line::raw(""),
+        section("notifications (3 from anywhere)"),
+        row("r", "mark selected as read"),
+        row("R", "mark all as read"),
+        row("f", "toggle unread-only filter"),
+        row("o", "open in browser"),
+        Line::raw(""),
         section("general"),
-        row("1 / 2", "switch tabs (search / my repos)"),
+        row("1 / 2 / 3", "switch tabs"),
         row("?", "toggle this help"),
         row("q", "quit"),
     ];
@@ -818,6 +875,375 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         .title("Help — press any key to close");
     let para = Paragraph::new(lines).block(block);
     f.render_widget(para, popup);
+}
+
+fn draw_issues_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let repo_name = app
+        .active_repo()
+        .map(|r| r.full_name.clone())
+        .unwrap_or_default();
+
+    let tab_label = match app.issue_tab {
+        IssueTab::Issues => "Issues",
+        IssueTab::PullRequests => "Pull Requests",
+    };
+    let loading_suffix = if app.issues_loading {
+        " [loading...]"
+    } else {
+        ""
+    };
+    let title = format!(
+        "{} — {} [{}] ({}){}",
+        repo_name,
+        tab_label,
+        app.issue_filter.label(),
+        app.issues.len(),
+        loading_suffix
+    );
+
+    let items: Vec<ListItem> = app
+        .issues
+        .iter()
+        .map(|issue| {
+            let state_color = if issue.state == "open" {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            let state_sym = if issue.state == "open" {
+                "● "
+            } else {
+                "○ "
+            };
+
+            let labels: String = if issue.labels.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", issue.labels.join(", "))
+            };
+
+            let line1 = Line::from(vec![
+                Span::styled(state_sym, Style::default().fg(state_color)),
+                Span::styled(
+                    format!("#{:<6}", issue.number),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    issue.title.chars().take(50).collect::<String>(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(labels, Style::default().fg(Color::Cyan)),
+            ]);
+            let line2 = Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("@{}  ", issue.user_login),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("💬 {}  ", issue.comments),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    issue.created_at.get(..10).unwrap_or("").to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]);
+            ListItem::new(vec![line1, line2])
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.issues.is_empty() {
+        state.select(Some(app.issues_selected));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_issue_preview(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Issue Preview — press l/Enter to open");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let text = match app.issues.get(app.issues_selected) {
+        Some(issue) => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("#{} {}", issue.number, issue.title),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    format!(
+                        "@{}  {}  {}",
+                        issue.user_login,
+                        issue.state,
+                        &issue.created_at.get(..10).unwrap_or("")
+                    ),
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::raw(""),
+            ];
+            if let Some(body) = &issue.body {
+                for line in body.lines().take(30) {
+                    lines.push(Line::from(Span::raw(line.to_string())));
+                }
+            } else {
+                lines.push(Line::from(Span::styled(
+                    "(no description)",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            Text::from(lines)
+        }
+        None => Text::from(Line::from(Span::styled(
+            if app.issues_loading {
+                "Loading..."
+            } else {
+                "No issues"
+            },
+            Style::default().fg(Color::DarkGray),
+        ))),
+    };
+
+    f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), inner);
+}
+
+fn draw_issue_detail(f: &mut Frame, app: &App, area: Rect) {
+    let Some(issue) = &app.current_issue else {
+        f.render_widget(
+            Paragraph::new("").block(Block::default().borders(Borders::ALL)),
+            area,
+        );
+        return;
+    };
+
+    let title = format!(
+        "#{} — {} — {} comment(s)",
+        issue.number,
+        issue.state,
+        app.issue_comments.len()
+    );
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            issue.title.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "@{}  {}  {}",
+                issue.user_login,
+                issue.state,
+                &issue.created_at.get(..10).unwrap_or("")
+            ),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::raw(""),
+    ];
+
+    if let Some(body) = &issue.body {
+        for line in body.lines() {
+            lines.push(Line::from(Span::raw(line.to_string())));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "(no description)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    if !app.issue_comments.is_empty() {
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(
+            "── comments ──",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for comment in &app.issue_comments {
+            lines.push(Line::raw(""));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "@{}  {}",
+                    comment.user_login,
+                    &comment.created_at.get(..10).unwrap_or("")
+                ),
+                Style::default().fg(Color::Yellow),
+            )));
+            for line in comment.body.lines() {
+                lines.push(Line::from(Span::raw(line.to_string())));
+            }
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((app.issue_scroll, 0)),
+        inner,
+    );
+}
+
+fn draw_notifications(f: &mut Frame, app: &mut App, area: Rect) {
+    let filter_label = if app.notifications_unread_only {
+        "Unread"
+    } else {
+        "All"
+    };
+    let loading_suffix = if app.notifications_loading {
+        " [loading...]"
+    } else {
+        ""
+    };
+    let title = format!(
+        "Notifications [{}] ({}){}",
+        filter_label,
+        app.notifications.len(),
+        loading_suffix
+    );
+
+    let items: Vec<ListItem> = app
+        .notifications
+        .iter()
+        .map(|notif| {
+            let unread_sym = if notif.unread {
+                Span::styled("● ", Style::default().fg(Color::Cyan))
+            } else {
+                Span::styled("○ ", Style::default().fg(Color::DarkGray))
+            };
+
+            let type_color = match notif.subject_type.as_str() {
+                "PullRequest" => Color::Magenta,
+                "Issue" => Color::Green,
+                "Release" => Color::Yellow,
+                _ => Color::DarkGray,
+            };
+
+            let line1 = Line::from(vec![
+                unread_sym,
+                Span::styled(
+                    format!("[{:<12}]  ", notif.subject_type),
+                    Style::default().fg(type_color),
+                ),
+                Span::styled(
+                    notif.subject_title.chars().take(55).collect::<String>(),
+                    Style::default()
+                        .fg(if notif.unread {
+                            Color::White
+                        } else {
+                            Color::DarkGray
+                        })
+                        .add_modifier(if notif.unread {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ),
+            ]);
+            let line2 = Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{}  ", notif.repo_full_name),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    format!("reason: {}  ", notif.reason),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    notif.updated_at.get(..10).unwrap_or("").to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]);
+            ListItem::new(vec![line1, line2])
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.notifications.is_empty() {
+        state.select(Some(app.notifications_selected));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_create_issue_overlay(f: &mut Frame, area: Rect, app: &App) {
+    let popup = centered_rect(65, 35, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title("New Issue — Tab to switch fields, Enter(body) to submit, Esc to cancel");
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // "Title:" label
+            Constraint::Length(1), // title input
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // "Body:" label
+            Constraint::Min(0),    // body input
+        ])
+        .split(inner);
+
+    let title_style = if !app.new_issue_focus_body {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let body_style = if app.new_issue_focus_body {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    f.render_widget(Paragraph::new("Title:").style(title_style), layout[0]);
+    f.render_widget(
+        Paragraph::new(app.new_issue_title.display_with_cursor()),
+        layout[1],
+    );
+    f.render_widget(Paragraph::new("Body:").style(body_style), layout[3]);
+    f.render_widget(
+        Paragraph::new(app.new_issue_body.display_with_cursor()).wrap(Wrap { trim: false }),
+        layout[4],
+    );
 }
 
 fn draw_input_overlay(f: &mut Frame, area: Rect, prompt: &str, input: &str) {

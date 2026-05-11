@@ -3,7 +3,10 @@ use base64::{engine::general_purpose, Engine as _};
 use octocrab::Octocrab;
 use serde::Deserialize;
 
-use crate::types::{EntryType, FileEntry, RateLimit, Repo, SearchResult, UserProfile};
+use crate::types::{
+    EntryType, FileEntry, Issue, IssueComment, IssueFilter, Notification, RateLimit, Repo,
+    SearchResult, UserProfile,
+};
 
 pub struct GithubClient {
     inner: Octocrab,
@@ -386,5 +389,203 @@ impl GithubClient {
             .context("failed to base64-decode readme")?;
         let text = String::from_utf8_lossy(&bytes).to_string();
         Ok(text)
+    }
+
+    pub async fn list_issues(
+        &self,
+        owner: &str,
+        repo: &str,
+        filter: &IssueFilter,
+        is_pr: bool,
+    ) -> Result<Vec<Issue>> {
+        #[derive(Deserialize)]
+        struct LabelItem {
+            name: String,
+        }
+        #[derive(Deserialize)]
+        struct IssueItem {
+            number: u64,
+            title: String,
+            state: String,
+            user: UserLogin,
+            body: Option<String>,
+            comments: u64,
+            created_at: String,
+            html_url: String,
+            pull_request: Option<serde_json::Value>,
+            labels: Vec<LabelItem>,
+        }
+        #[derive(Deserialize)]
+        struct UserLogin {
+            login: String,
+        }
+
+        let type_filter = if is_pr { "pulls" } else { "issues" };
+        let url = format!(
+            "/repos/{}/{}/issues?state={}&per_page=50&sort=updated&type={}",
+            owner,
+            repo,
+            filter.as_str(),
+            type_filter
+        );
+        // GitHub issues endpoint returns both issues and PRs; filter by pull_request field
+        let items: Vec<IssueItem> = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("list issues request failed")?;
+
+        Ok(items
+            .into_iter()
+            .filter(|item| {
+                let has_pr = item.pull_request.is_some();
+                has_pr == is_pr
+            })
+            .map(|item| Issue {
+                number: item.number,
+                title: item.title,
+                state: item.state,
+                user_login: item.user.login,
+                body: item.body,
+                comments: item.comments,
+                created_at: item.created_at,
+                html_url: item.html_url,
+                pull_request: item.pull_request.is_some(),
+                labels: item.labels.into_iter().map(|l| l.name).collect(),
+            })
+            .collect())
+    }
+
+    pub async fn get_issue_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<Vec<IssueComment>> {
+        #[derive(Deserialize)]
+        struct CommentItem {
+            id: u64,
+            user: UserLogin,
+            body: String,
+            created_at: String,
+        }
+        #[derive(Deserialize)]
+        struct UserLogin {
+            login: String,
+        }
+
+        let url = format!(
+            "/repos/{}/{}/issues/{}/comments?per_page=50",
+            owner, repo, number
+        );
+        let items: Vec<CommentItem> = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("get issue comments failed")?;
+
+        Ok(items
+            .into_iter()
+            .map(|c| IssueComment {
+                id: c.id,
+                user_login: c.user.login,
+                body: c.body,
+                created_at: c.created_at,
+            })
+            .collect())
+    }
+
+    pub async fn create_issue(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<u64> {
+        #[derive(Deserialize)]
+        struct CreatedIssue {
+            number: u64,
+        }
+        let resp: CreatedIssue = self
+            .inner
+            .post(
+                format!("/repos/{}/{}/issues", owner, repo),
+                Some(&serde_json::json!({ "title": title, "body": body })),
+            )
+            .await
+            .context("create issue failed")?;
+        Ok(resp.number)
+    }
+
+    pub async fn close_issue(&self, owner: &str, repo: &str, number: u64) -> Result<()> {
+        self.inner
+            ._patch(
+                format!("/repos/{}/{}/issues/{}", owner, repo, number),
+                Some(&serde_json::json!({ "state": "closed" })),
+            )
+            .await
+            .context("close issue failed")?;
+        Ok(())
+    }
+
+    pub async fn list_notifications(&self, only_unread: bool) -> Result<Vec<Notification>> {
+        #[derive(Deserialize)]
+        struct NotifItem {
+            id: String,
+            repository: NotifRepo,
+            subject: NotifSubject,
+            reason: String,
+            unread: bool,
+            updated_at: String,
+        }
+        #[derive(Deserialize)]
+        struct NotifRepo {
+            full_name: String,
+        }
+        #[derive(Deserialize)]
+        struct NotifSubject {
+            title: String,
+            #[serde(rename = "type")]
+            subject_type: String,
+            url: Option<String>,
+        }
+
+        let all_param = if only_unread { "false" } else { "true" };
+        let url = format!("/notifications?all={}&per_page=50", all_param);
+        let items: Vec<NotifItem> = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("list notifications failed")?;
+
+        Ok(items
+            .into_iter()
+            .map(|n| Notification {
+                id: n.id,
+                repo_full_name: n.repository.full_name,
+                subject_title: n.subject.title,
+                subject_type: n.subject.subject_type,
+                reason: n.reason,
+                unread: n.unread,
+                updated_at: n.updated_at,
+                subject_url: n.subject.url,
+            })
+            .collect())
+    }
+
+    pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
+        self.inner
+            ._patch(format!("/notifications/threads/{}", id), None::<&()>)
+            .await
+            .context("mark notification read failed")?;
+        Ok(())
+    }
+
+    pub async fn mark_all_notifications_read(&self) -> Result<()> {
+        self.inner
+            ._put("/notifications", Some(&serde_json::json!({})))
+            .await
+            .context("mark all notifications read failed")?;
+        Ok(())
     }
 }
