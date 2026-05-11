@@ -23,6 +23,7 @@ pub enum AppState {
     FileBrowsing,
     Cloning,
     SparseCloning,
+    FileSaving,
     Error(String),
     Help,
 }

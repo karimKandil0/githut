@@ -27,6 +27,7 @@ pub struct App {
     pub sparse_path_input: String,
     pub sparse_dirs_input: String,
     pub sparse_step: SparseStep,
+    pub file_save_path_input: String,
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
@@ -56,6 +57,7 @@ impl App {
             sparse_path_input: String::new(),
             sparse_dirs_input: String::new(),
             sparse_step: SparseStep::Path,
+            file_save_path_input: String::new(),
             bg_tx,
             bg_rx,
         }

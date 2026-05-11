@@ -58,6 +58,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             draw_input_overlay(f, area, "Clone path:", &app.clone_path_input.clone())
         }
         AppState::SparseCloning => draw_sparse_overlay(f, area, app),
+        AppState::FileSaving => draw_input_overlay(
+            f,
+            area,
+            "Save file to path:",
+            &app.file_save_path_input.clone(),
+        ),
         _ => {}
     }
 }
@@ -210,11 +216,14 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("j/k", "nav"),
             ("J/K", "scroll preview"),
             ("l", "open"),
+            ("c", "save file"),
             ("h", "up / back"),
             ("Esc", "back to repos"),
             ("q", "quit"),
         ],
-        AppState::Cloning | AppState::SparseCloning => &[("Enter", "confirm"), ("Esc", "cancel")],
+        AppState::Cloning | AppState::SparseCloning | AppState::FileSaving => {
+            &[("Enter", "confirm"), ("Esc", "cancel")]
+        }
         AppState::Error(_) => &[("any key", "dismiss")],
         AppState::Help => &[("any key", "close")],
         _ => &[("q", "quit")],

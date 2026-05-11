@@ -8,6 +8,7 @@ use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
 use crate::types::{AppState, EntryType, SparseStep};
+use std::path::Path;
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -29,6 +30,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::FileBrowsing => handle_file_browsing(app, client, key.code).await,
         AppState::Cloning => handle_cloning(app, key.code).await,
         AppState::SparseCloning => handle_sparse_cloning(app, key.code).await,
+        AppState::FileSaving => handle_file_saving(app, client, key.code).await,
         AppState::Error(_) | AppState::Help => {
             app.state = AppState::Browsing;
             Ok(false)
@@ -209,6 +211,14 @@ async fn handle_file_browsing(app: &mut App, client: &GithubClient, code: KeyCod
         KeyCode::Char('K') => {
             app.file_scroll = app.file_scroll.saturating_sub(1);
         }
+        KeyCode::Char('c') => {
+            if let Some(entry) = app.selected_entry() {
+                if entry.entry_type == EntryType::File {
+                    app.file_save_path_input.clear();
+                    app.state = AppState::FileSaving;
+                }
+            }
+        }
         KeyCode::Char('l') | KeyCode::Enter => {
             if let Some(entry) = app.selected_entry().cloned() {
                 match entry.entry_type {
@@ -336,6 +346,62 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
             SparseStep::Path => app.sparse_path_input.push(c),
             SparseStep::Dirs => app.sparse_dirs_input.push(c),
         },
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::FileBrowsing;
+        }
+        KeyCode::Backspace => {
+            app.file_save_path_input.pop();
+        }
+        KeyCode::Char(c) => {
+            app.file_save_path_input.push(c);
+        }
+        KeyCode::Enter => {
+            let dest = app.file_save_path_input.trim().to_string();
+            if dest.is_empty() {
+                app.set_error("save path cannot be empty");
+                return Ok(false);
+            }
+            if let (Some(repo), Some(entry)) =
+                (app.selected_repo().cloned(), app.selected_entry().cloned())
+            {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let file_path = entry.path.clone();
+                let file_name = entry.name.clone();
+                app.set_status(format!("downloading {}...", file_name));
+                app.state = AppState::FileBrowsing;
+                match client.get_file_content(&owner, &name, &file_path).await {
+                    Ok(content) => {
+                        let tx = app.bg_tx.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let result = (|| -> std::result::Result<(), String> {
+                                if let Some(parent) = Path::new(&dest).parent() {
+                                    if !parent.as_os_str().is_empty() {
+                                        std::fs::create_dir_all(parent)
+                                            .map_err(|e| e.to_string())?;
+                                    }
+                                }
+                                std::fs::write(&dest, content.as_bytes())
+                                    .map_err(|e| e.to_string())?;
+                                Ok(())
+                            })();
+                            let msg = result
+                                .map(|_| format!("saved to {}", dest))
+                                .map_err(|e| format!("save failed: {}", e));
+                            let _ = tx.send(msg);
+                        });
+                    }
+                    Err(e) => app.set_error(format!("download failed: {}", e)),
+                }
+            }
+        }
         _ => {}
     }
     Ok(false)
