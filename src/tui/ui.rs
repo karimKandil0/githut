@@ -8,21 +8,28 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown;
-use crate::types::{AppState, EntryType, SparseStep};
+use crate::types::{AppState, EntryType, SparseStep, Tab};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
-    // Outer: main + status bar
+    // Outer: tab bar + main + status bar
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
         .split(area);
 
-    let main_area = outer[0];
-    let status_area = outer[1];
+    let tab_area = outer[0];
+    let main_area = outer[1];
+    let status_area = outer[2];
 
-    // Main: left results pane + right readme pane
+    draw_tab_bar(f, app, tab_area);
+
+    // Main: left pane + right readme pane
     let panes = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -31,23 +38,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let left_area = panes[0];
     let right_area = panes[1];
 
-    // Left: search bar + results list
-    let left_split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(left_area);
-
-    let search_area = left_split[0];
-    let list_area = left_split[1];
-
     if matches!(app.state, AppState::FileBrowsing) {
         draw_file_browser(f, app, left_area);
         draw_file_content(f, app, right_area);
+    } else if app.tab == Tab::MyRepos {
+        // Left: search bar replaced by my repos header + list
+        let left_split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(left_area);
+        draw_my_repos_header(f, app, left_split[0]);
+        draw_my_repos_list(f, app, left_split[1]);
+        draw_readme(f, app, right_area);
     } else {
-        draw_search_bar(f, app, search_area);
-        draw_results(f, app, list_area);
+        let left_split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(left_area);
+        draw_search_bar(f, app, left_split[0]);
+        draw_results(f, app, left_split[1]);
         draw_readme(f, app, right_area);
     }
+
     draw_status_bar(f, app, status_area);
 
     // Overlays on top
@@ -67,8 +79,133 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             "Save file to path:",
             &app.file_save_path_input.display_with_cursor(),
         ),
+        AppState::Renaming => draw_input_overlay(
+            f,
+            area,
+            "Rename repo:",
+            &app.rename_input.display_with_cursor(),
+        ),
+        AppState::ConfirmDelete => {
+            let name = app
+                .selected_my_repo()
+                .map(|r| r.full_name.as_str())
+                .unwrap_or("this repo");
+            draw_confirm_overlay(f, area, &format!("Delete {}? (y/n)", name));
+        }
         _ => {}
     }
+}
+
+fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
+    let tabs = vec![
+        ("1", "Search", app.tab == Tab::Search),
+        ("2", "My Repos", app.tab == Tab::MyRepos),
+    ];
+    let mut spans = vec![Span::raw(" ")];
+    for (key, label, active) in tabs {
+        if active {
+            spans.push(Span::styled(
+                format!("[{}:{}]", key, label),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::styled(
+                format!(" {}:{} ", key, label),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        spans.push(Span::raw("  "));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn draw_my_repos_header(f: &mut Frame, app: &App, area: Rect) {
+    let loading = if app.my_repos_loading {
+        " [loading...]"
+    } else {
+        ""
+    };
+    let title = format!("My Repos{}", loading);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title(title);
+    f.render_widget(block, area);
+}
+
+fn draw_my_repos_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let items: Vec<ListItem> = app
+        .my_repos
+        .iter()
+        .map(|repo| {
+            let lang = repo.language.as_deref().unwrap_or("—");
+            let stars = format_stars(repo.stargazers_count);
+            let is_starred = app.starred.contains(&repo.full_name);
+
+            let mut badges = String::new();
+            if repo.archived {
+                badges.push_str("[archived] ");
+            }
+            if repo.fork {
+                badges.push_str("[fork] ");
+            }
+
+            let star_span = if is_starred {
+                Span::styled("★ ", Style::default().fg(Color::Yellow))
+            } else {
+                Span::styled("  ", Style::default())
+            };
+
+            let line1 = Line::from(vec![
+                star_span,
+                Span::styled(
+                    format!("{:<38}", repo.name),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("{:<12}", lang), Style::default().fg(Color::Green)),
+                Span::styled(stars, Style::default().fg(Color::Yellow)),
+            ]);
+            let desc = repo
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .chars()
+                .take(60)
+                .collect::<String>();
+            let line2 = Line::from(vec![
+                Span::styled(
+                    format!("  {}", badges),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(desc, Style::default().fg(Color::DarkGray)),
+            ]);
+            ListItem::new(vec![line1, line2])
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.my_repos.is_empty() {
+        state.select(Some(app.my_repos_selected));
+    }
+
+    let count = app.my_repos.len();
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Repos ({})", count)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -262,9 +399,22 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("Esc", "back to repos"),
             ("q", "quit"),
         ],
-        AppState::Cloning | AppState::SparseCloning | AppState::FileSaving => {
+        AppState::MyRepos => &[
+            ("j/k", "nav"),
+            ("J/K", "scroll readme"),
+            ("l", "browse files"),
+            ("c", "clone"),
+            ("R", "rename"),
+            ("D", "delete"),
+            ("A", "archive"),
+            ("o", "browser"),
+            ("?", "help"),
+            ("q", "quit"),
+        ],
+        AppState::Cloning | AppState::SparseCloning | AppState::FileSaving | AppState::Renaming => {
             &[("Enter", "confirm"), ("Esc", "cancel")]
         }
+        AppState::ConfirmDelete => &[("y", "confirm delete"), ("n / Esc", "cancel")],
         AppState::Error(_) => &[("any key", "dismiss")],
         AppState::Help => &[("any key", "close")],
         _ => &[("q", "quit")],
@@ -293,7 +443,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_file_browser(f: &mut Frame, app: &mut App, area: Rect) {
     let repo_name = app
-        .selected_repo()
+        .active_repo()
         .map(|r| r.full_name.clone())
         .unwrap_or_default();
     let current_path = app.current_file_path().to_string();
@@ -420,6 +570,17 @@ fn draw_sparse_overlay(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+fn draw_confirm_overlay(f: &mut Frame, area: Rect, msg: &str) {
+    let popup = centered_rect(55, 15, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .title("Confirm");
+    let para = Paragraph::new(msg).block(block).wrap(Wrap { trim: true });
+    f.render_widget(para, popup);
+}
+
 fn draw_error_overlay(f: &mut Frame, area: Rect, msg: &str) {
     let popup = centered_rect(60, 30, area);
     f.render_widget(Clear, popup);
@@ -482,7 +643,13 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         row("c", "save file to local path"),
         row("h", "go up one dir"),
         Line::raw(""),
+        section("my repos (tab 2)"),
+        row("R", "rename repo"),
+        row("D", "delete repo (confirms y/n)"),
+        row("A", "archive / unarchive"),
+        Line::raw(""),
         section("general"),
+        row("1 / 2", "switch tabs (search / my repos)"),
         row("?", "toggle this help"),
         row("q", "quit"),
     ];

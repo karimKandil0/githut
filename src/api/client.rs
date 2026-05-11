@@ -28,6 +28,10 @@ struct RepoItem {
     html_url: String,
     clone_url: String,
     default_branch: String,
+    #[serde(default)]
+    archived: bool,
+    #[serde(default)]
+    fork: bool,
 }
 
 #[derive(Deserialize)]
@@ -94,6 +98,8 @@ impl GithubClient {
                 html_url: item.html_url,
                 clone_url: item.clone_url,
                 default_branch: item.default_branch,
+                archived: item.archived,
+                fork: item.fork,
             })
             .collect();
 
@@ -201,6 +207,66 @@ impl GithubClient {
             )
             .await
             .context("fork request failed")?;
+        Ok(())
+    }
+
+    pub async fn list_my_repos(&self) -> Result<Vec<Repo>> {
+        let items: Vec<RepoItem> = self
+            .inner
+            .get(
+                "/user/repos?sort=updated&per_page=100&affiliation=owner",
+                None::<&()>,
+            )
+            .await
+            .context("list repos request failed")?;
+
+        Ok(items
+            .into_iter()
+            .map(|item| Repo {
+                id: item.id,
+                full_name: item.full_name,
+                name: item.name,
+                owner: item.owner.login,
+                description: item.description,
+                language: item.language,
+                stargazers_count: item.stargazers_count,
+                forks_count: item.forks_count,
+                html_url: item.html_url,
+                clone_url: item.clone_url,
+                default_branch: item.default_branch,
+                archived: item.archived,
+                fork: item.fork,
+            })
+            .collect())
+    }
+
+    pub async fn delete_repo(&self, owner: &str, repo: &str) -> Result<()> {
+        self.inner
+            ._delete(format!("/repos/{}/{}", owner, repo), None::<&()>)
+            .await
+            .context("delete repo request failed")?;
+        Ok(())
+    }
+
+    pub async fn rename_repo(&self, owner: &str, repo: &str, new_name: &str) -> Result<()> {
+        self.inner
+            ._patch(
+                format!("/repos/{}/{}", owner, repo),
+                Some(&serde_json::json!({ "name": new_name })),
+            )
+            .await
+            .context("rename repo request failed")?;
+        Ok(())
+    }
+
+    pub async fn set_archived(&self, owner: &str, repo: &str, archived: bool) -> Result<()> {
+        self.inner
+            ._patch(
+                format!("/repos/{}/{}", owner, repo),
+                Some(&serde_json::json!({ "archived": archived })),
+            )
+            .await
+            .context("set archived request failed")?;
         Ok(())
     }
 

@@ -76,7 +76,7 @@ async fn run_app(
 
         // debounced fetch — fires 300ms after last j/k
         if app.take_readme_pending() {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 let full_name = repo.full_name.clone();

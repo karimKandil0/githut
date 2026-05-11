@@ -7,7 +7,7 @@ use std::time::Instant;
 use crate::api::GithubClient;
 use crate::app::App;
 use crate::git;
-use crate::types::{AppState, EntryType, SparseStep};
+use crate::types::{AppState, EntryType, SparseStep, Tab};
 
 /// Returns true if the app should quit.
 pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool> {
@@ -26,12 +26,20 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
     match &app.state.clone() {
         AppState::Searching => handle_searching(app, client, key.code).await,
         AppState::Browsing => handle_browsing(app, client, key.code).await,
+        AppState::MyRepos => handle_my_repos(app, client, key.code).await,
         AppState::FileBrowsing => handle_file_browsing(app, client, key.code).await,
         AppState::Cloning => handle_cloning(app, key.code).await,
         AppState::SparseCloning => handle_sparse_cloning(app, key.code).await,
         AppState::FileSaving => handle_file_saving(app, client, key.code).await,
+        AppState::Renaming => handle_renaming(app, client, key.code).await,
+        AppState::ConfirmDelete => handle_confirm_delete(app, client, key.code).await,
         AppState::Error(_) | AppState::Help => {
-            app.state = AppState::Browsing;
+            // return to correct state based on tab
+            app.state = if app.tab == Tab::MyRepos {
+                AppState::MyRepos
+            } else {
+                AppState::Browsing
+            };
             Ok(false)
         }
         AppState::Previewing => Ok(false),
@@ -42,6 +50,9 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
     match code {
         KeyCode::Esc => {
             app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            return switch_to_my_repos(app, client).await;
         }
         KeyCode::Enter => {
             if !app.search_query.is_empty() {
@@ -66,6 +77,13 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
 async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
     match code {
         KeyCode::Char('q') => return Ok(true),
+        KeyCode::Char('1') => {
+            app.tab = Tab::Search;
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            return switch_to_my_repos(app, client).await;
+        }
         KeyCode::Char('/') => {
             app.state = AppState::Searching;
         }
@@ -280,7 +298,7 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
         KeyCode::Home => app.clone_path_input.move_home(),
         KeyCode::End => app.clone_path_input.move_end(),
         KeyCode::Enter => {
-            if let Some(repo) = app.selected_repo() {
+            if let Some(repo) = app.active_repo() {
                 let url = repo.clone_url.clone();
                 let path = app.clone_path_input.to_path();
                 if path.is_empty() {
@@ -289,7 +307,11 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                 }
                 let full_name = repo.full_name.clone();
                 app.set_status(format!("cloning {}...", full_name));
-                app.state = AppState::Browsing;
+                app.state = if app.tab == Tab::MyRepos {
+                    AppState::MyRepos
+                } else {
+                    AppState::Browsing
+                };
                 let tx = app.bg_tx.clone();
                 tokio::task::spawn_blocking(move || {
                     let res = git::clone_repo(&url, &path)
@@ -423,6 +445,193 @@ async fn handle_file_saving(app: &mut App, client: &GithubClient, code: KeyCode)
                         });
                     }
                     Err(e) => app.set_error(format!("download failed: {}", e)),
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn switch_to_my_repos(app: &mut App, client: &GithubClient) -> Result<bool> {
+    app.tab = Tab::MyRepos;
+    app.state = AppState::MyRepos;
+    if app.my_repos.is_empty() {
+        app.my_repos_loading = true;
+        match client.list_my_repos().await {
+            Ok(repos) => app.my_repos = repos,
+            Err(e) => app.set_error(format!("failed to load your repos: {}", e)),
+        }
+        app.my_repos_loading = false;
+    }
+    Ok(false)
+}
+
+async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Char('1') => {
+            app.tab = Tab::Search;
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            // refresh
+            app.my_repos_loading = true;
+            match client.list_my_repos().await {
+                Ok(repos) => {
+                    app.my_repos = repos;
+                    app.my_repos_selected = 0;
+                }
+                Err(e) => app.set_error(format!("failed to load your repos: {}", e)),
+            }
+            app.my_repos_loading = false;
+        }
+        KeyCode::Char('j') | KeyCode::Down => app.my_repos_next(),
+        KeyCode::Char('k') | KeyCode::Up => app.my_repos_prev(),
+        KeyCode::Char('J') => {
+            app.readme_scroll = app.readme_scroll.saturating_add(1);
+        }
+        KeyCode::Char('K') => {
+            app.readme_scroll = app.readme_scroll.saturating_sub(1);
+        }
+        KeyCode::Char('?') => {
+            app.state = AppState::Help;
+        }
+        KeyCode::Char('o') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let url = repo.html_url.clone();
+                if let Err(e) = open::that(&url) {
+                    app.set_error(format!("failed to open browser: {}", e));
+                }
+            }
+        }
+        KeyCode::Char('c') => {
+            if app.selected_my_repo().is_some() {
+                app.prefill_clone_path();
+                app.state = AppState::Cloning;
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.file_entries.clear();
+                app.file_selected = 0;
+                app.file_path_stack.clear();
+                app.file_content = None;
+                app.file_scroll = 0;
+                app.loading = true;
+                app.state = AppState::FileBrowsing;
+                match client.get_contents(&owner, &name, "").await {
+                    Ok(entries) => app.file_entries = entries,
+                    Err(e) => app.set_error(format!("failed to load files: {}", e)),
+                }
+                app.loading = false;
+            }
+        }
+        KeyCode::Char('R') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let name = repo.name.clone();
+                app.rename_input.clear();
+                for c in name.chars() {
+                    app.rename_input.insert(c);
+                }
+                app.state = AppState::Renaming;
+            }
+        }
+        KeyCode::Char('D') => {
+            if app.selected_my_repo().is_some() {
+                app.state = AppState::ConfirmDelete;
+            }
+        }
+        KeyCode::Char('A') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let archived = repo.archived;
+                let full_name = repo.full_name.clone();
+                match client.set_archived(&owner, &name, !archived).await {
+                    Ok(()) => {
+                        // update in-place
+                        if let Some(r) = app.my_repos.get_mut(app.my_repos_selected) {
+                            r.archived = !archived;
+                        }
+                        let action = if !archived { "archived" } else { "unarchived" };
+                        app.set_status(format!("{} {}", action, full_name));
+                    }
+                    Err(e) => app.set_error(format!("archive failed: {}", e)),
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_renaming(app: &mut App, client: &GithubClient, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::MyRepos;
+        }
+        KeyCode::Backspace => app.rename_input.backspace(),
+        KeyCode::Delete => app.rename_input.delete(),
+        KeyCode::Left => app.rename_input.move_left(),
+        KeyCode::Right => app.rename_input.move_right(),
+        KeyCode::Home => app.rename_input.move_home(),
+        KeyCode::End => app.rename_input.move_end(),
+        KeyCode::Char(c) => app.rename_input.insert(c),
+        KeyCode::Enter => {
+            let new_name = app.rename_input.as_str().trim().to_string();
+            if new_name.is_empty() {
+                app.set_error("name cannot be empty");
+                return Ok(false);
+            }
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let old_name = repo.name.clone();
+                match client.rename_repo(&owner, &old_name, &new_name).await {
+                    Ok(()) => {
+                        if let Some(r) = app.my_repos.get_mut(app.my_repos_selected) {
+                            r.name = new_name.clone();
+                            r.full_name = format!("{}/{}", owner, new_name);
+                        }
+                        app.set_status(format!("renamed to {}", new_name));
+                        app.state = AppState::MyRepos;
+                    }
+                    Err(e) => app.set_error(format!("rename failed: {}", e)),
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_confirm_delete(
+    app: &mut App,
+    client: &GithubClient,
+    code: KeyCode,
+) -> Result<bool> {
+    match code {
+        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+            app.state = AppState::MyRepos;
+        }
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                let full_name = repo.full_name.clone();
+                match client.delete_repo(&owner, &name).await {
+                    Ok(()) => {
+                        app.my_repos.remove(app.my_repos_selected);
+                        if app.my_repos_selected > 0 && app.my_repos_selected >= app.my_repos.len()
+                        {
+                            app.my_repos_selected -= 1;
+                        }
+                        app.set_status(format!("deleted {}", full_name));
+                        app.state = AppState::MyRepos;
+                    }
+                    Err(e) => app.set_error(format!("delete failed: {}", e)),
                 }
             }
         }

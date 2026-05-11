@@ -13,6 +13,14 @@ pub struct Repo {
     pub html_url: String,
     pub clone_url: String,
     pub default_branch: String,
+    pub archived: bool,
+    pub fork: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tab {
+    Search,
+    MyRepos,
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +32,9 @@ pub enum AppState {
     Cloning,
     SparseCloning,
     FileSaving,
+    MyRepos,
+    Renaming,
+    ConfirmDelete,
     Error(String),
     Help,
 }

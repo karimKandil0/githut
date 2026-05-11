@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
-use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep};
+use crate::types::{AppState, FileEntry, RateLimit, Repo, SparseStep, Tab};
 
 pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
     None,
@@ -41,7 +41,14 @@ pub struct App {
     pub readme_pending: Option<Instant>,
     pub starred: HashSet<String>,
     pub rate_limit: Option<RateLimit>,
-    pub language_idx: usize, // index into LANGUAGE_CYCLE
+    pub language_idx: usize,
+    // tab
+    pub tab: Tab,
+    // my repos
+    pub my_repos: Vec<Repo>,
+    pub my_repos_selected: usize,
+    pub my_repos_loading: bool,
+    pub rename_input: TextInput,
     // sparse clone
     pub sparse_path_input: TextInput,
     pub sparse_dirs_input: TextInput,
@@ -78,6 +85,11 @@ impl App {
             starred: HashSet::new(),
             rate_limit: None,
             language_idx: 0,
+            tab: Tab::Search,
+            my_repos: Vec::new(),
+            my_repos_selected: 0,
+            my_repos_loading: false,
+            rename_input: TextInput::new(),
             sparse_path_input: TextInput::new(),
             sparse_dirs_input: TextInput::new(),
             sparse_step: SparseStep::Path,
@@ -97,6 +109,34 @@ impl App {
                 self.clone_path_input.insert(c);
             }
         }
+    }
+
+    pub fn my_repos_next(&mut self) {
+        if self.my_repos.is_empty() {
+            return;
+        }
+        self.my_repos_selected = (self.my_repos_selected + 1) % self.my_repos.len();
+        self.readme_content = None;
+        self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
+    }
+
+    pub fn my_repos_prev(&mut self) {
+        if self.my_repos.is_empty() {
+            return;
+        }
+        if self.my_repos_selected == 0 {
+            self.my_repos_selected = self.my_repos.len() - 1;
+        } else {
+            self.my_repos_selected -= 1;
+        }
+        self.readme_content = None;
+        self.readme_scroll = 0;
+        self.readme_pending = Some(Instant::now());
+    }
+
+    pub fn selected_my_repo(&self) -> Option<&Repo> {
+        self.my_repos.get(self.my_repos_selected)
     }
 
     pub fn current_language(&self) -> Option<&str> {
@@ -154,6 +194,14 @@ impl App {
 
     pub fn selected_repo(&self) -> Option<&Repo> {
         self.results.get(self.selected)
+    }
+
+    /// Returns the active repo regardless of which tab is open.
+    pub fn active_repo(&self) -> Option<&Repo> {
+        match self.tab {
+            Tab::MyRepos => self.my_repos.get(self.my_repos_selected),
+            Tab::Search => self.results.get(self.selected),
+        }
     }
 
     pub fn set_error(&mut self, msg: impl Into<String>) {
