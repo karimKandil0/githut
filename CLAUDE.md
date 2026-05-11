@@ -15,7 +15,7 @@ the terminal, keyboard-driven.
 - TUI: ratatui + crossterm
 - Async: tokio
 - GitHub API: octocrab
-- Git operations: git2 (libgit2 bindings)
+- Git operations: git2 (regular clone) + git CLI shell-out (sparse clone)
 - Markdown rendering: pulldown-cmark (custom ratatui renderer in src/markdown.rs)
 - Error handling: anyhow
 - Serialization: serde + serde_json
@@ -40,6 +40,7 @@ githut/
       ui.rs          -- all ratatui rendering logic
       events.rs      -- keyboard input handling, event loop
     markdown.rs      -- custom markdown → Vec<Line> renderer (pulldown-cmark)
+    input.rs         -- TextInput struct: cursor movement, arrow keys, path expansion
   Cargo.toml
   flake.nix
   CLAUDE.md
@@ -89,7 +90,7 @@ Controls are consistent across all modes.
 | l / Enter   | Open file browser / enter dir / preview file  |
 | h           | Go up one dir; at root, back to repo list     |
 | Esc         | Back / close overlay                          |
-| c           | Clone selected repo (prompts path)            |
+| c           | Clone selected repo / save file (in FileBrowsing) |
 | C           | Sparse-clone (prompts path + dirs)            |
 | f           | Fork selected repo                            |
 | s           | Star / unstar selected repo                   |
@@ -132,17 +133,24 @@ Always use auth. Show rate limit remaining in status bar if possible.
 
 ## Git Operations
 
-Clone uses git2:
+Regular clone uses git2:
 ```rust
-// git.rs pattern
 git2::Repository::clone(url, path)?;
 ```
 
-Sparse clone flow:
-1. Init repo (no checkout)
-2. Add remote
-3. Set sparse-checkout patterns
-4. Pull only matching paths
+Sparse clone shells out to git CLI — git2's `checkout_tree` ignores sparse-checkout
+patterns, so this is the only reliable approach:
+```
+git clone --no-checkout --filter=blob:none --sparse <url> <path>
+git -C <path> sparse-checkout set <dirs...>
+git -C <path> checkout
+```
+All git subprocess stdout/stderr is suppressed (Stdio::null) to prevent bleeding into TUI.
+
+Both operations run in `tokio::task::spawn_blocking` and send results back via an
+`mpsc::UnboundedChannel` stored on `App`. The main loop drains it each tick.
+
+Path inputs expand `~`, `./`, `../` at submit time via `TextInput::to_path()` in input.rs.
 
 ## App State Machine
 
@@ -152,7 +160,8 @@ enum AppState {
     Browsing,         // navigating results list
     FileBrowsing,     // browsing repo file tree
     Cloning,          // clone path input prompt
-    SparseCloning,    // sparse-clone path + dirs prompt (future)
+    SparseCloning,    // sparse-clone path + dirs prompt
+    FileSaving,       // save single file path prompt (from FileBrowsing)
     Previewing,       // reserved (unused currently)
     Error(String),    // showing error overlay
     Help,             // showing help overlay
@@ -189,15 +198,17 @@ Goal: fork, star, open browser.
 - [x] events.rs: f, s keybindings
 - [x] open crate: browser open on `o`
 
-### Phase 3 — Power Features
+### Phase 3 — Power Features (IN PROGRESS)
 Goal: sparse clone, language filter, better UX.
 
-- [ ] git.rs: sparse-clone implementation
-- [ ] events.rs: C for sparse-clone, prompt for dirs
+- [x] git.rs: sparse-clone via git CLI (--filter=blob:none --sparse)
+- [x] events.rs: C for sparse-clone, two-step prompt (path → dirs)
+- [x] events.rs: c in FileBrowsing saves single file to local path
+- [x] clone/sparse-clone run in background — TUI stays responsive
+- [x] TextInput: arrow keys, cursor, Home/End, Delete, path expansion (~, ./, ../)
 - [ ] ui.rs: language filter tab cycling
 - [ ] github.rs: pass language filter to search query
 - [ ] ui.rs: rate limit display in status bar
-- [ ] ui.rs: help overlay on `?`
 - [ ] config: ~/.config/githut/config.toml for default clone path, etc.
 
 ### Phase 4 — Your Repos (direction 2)
