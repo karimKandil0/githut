@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use std::time::Duration;
 
@@ -270,7 +270,12 @@ async fn handle_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                 }
                 app.set_status(format!("cloning {}...", repo.full_name));
                 app.state = AppState::Browsing;
-                match git::clone_repo(&url, &path) {
+                let url2 = url.clone();
+                let path2 = path.clone();
+                match tokio::task::spawn_blocking(move || git::clone_repo(&url2, &path2))
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("task panicked: {}", e)))
+                {
                     Ok(()) => app.set_status(format!("cloned to {}", path)),
                     Err(e) => app.set_error(format!("clone failed: {}", e)),
                 }
@@ -309,16 +314,25 @@ async fn handle_sparse_cloning(app: &mut App, code: KeyCode) -> Result<bool> {
                     let branch = repo.default_branch.clone();
                     let path = app.sparse_path_input.trim().to_string();
                     let dirs_raw = app.sparse_dirs_input.trim().to_string();
-                    let dirs: Vec<&str> = if dirs_raw.is_empty() {
+                    let dirs: Vec<String> = if dirs_raw.is_empty() {
                         vec![]
                     } else {
-                        dirs_raw.split_whitespace().collect()
+                        dirs_raw.split_whitespace().map(|s| s.to_string()).collect()
                     };
                     let full_name = repo.full_name.clone();
                     app.set_status(format!("sparse cloning {}...", full_name));
                     app.state = AppState::Browsing;
-                    match git::sparse_clone(&url, &path, &branch, &dirs) {
-                        Ok(()) => app.set_status(format!("sparse cloned to {}", path)),
+                    match tokio::task::spawn_blocking(move || {
+                        let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
+                        git::sparse_clone(&url, &path, &branch, &dir_refs)
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("task panicked: {}", e)))
+                    {
+                        Ok(()) => app.set_status(format!(
+                            "sparse cloned to {}",
+                            app.sparse_path_input.trim()
+                        )),
                         Err(e) => app.set_error(format!("sparse clone failed: {}", e)),
                     }
                 }
