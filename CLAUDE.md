@@ -236,6 +236,21 @@ Goal: browse any user's public repos and profile info.
 - [x] Esc/h returns to previous state (Browsing, MyRepos, or profile chain)
 - [x] file browser correctly tracks origin state via prev_state
 
+### Phase 6 — Issues, PRs & Notifications (DONE)
+Goal: browse issues/PRs for any repo, create issues, view notifications.
+
+- [x] client.rs: list_issues (issues + PRs via pull_request field filter), get_issue_comments, create_issue, close_issue
+- [x] client.rs: list_notifications, mark_notification_read, mark_all_notifications_read
+- [x] types.rs: Issue, IssueComment, Notification, IssueFilter, IssueTab structs/enums
+- [x] types.rs: ViewingIssues, ViewingIssue, CreatingIssue, ViewingNotifications AppState variants
+- [x] events.rs: i key → opens issues list for selected repo (works from Search, MyRepos, Profile)
+- [x] events.rs: Tab to switch Issues/PRs, f to cycle open/closed/all filter, n to create, x to close
+- [x] events.rs: l/Enter to open issue detail + comments, Esc/h back to list
+- [x] events.rs: 3 key → notifications from anywhere (r mark read, R mark all, f toggle unread filter, o browser)
+- [x] ui.rs: issues list (left pane), issue preview (right pane), issue detail with comments (full right pane)
+- [x] ui.rs: notifications full-screen list, create issue overlay (title + body fields, Tab to switch)
+- [x] ui.rs: tab bar shows [3:Notifications] when active
+
 ## Error Handling
 
 Use anyhow for all errors. Surface them to the user via AppState::Error(msg).
