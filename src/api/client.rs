@@ -257,7 +257,16 @@ impl GithubClient {
         self.inner
             ._delete(format!("/repos/{}/{}", owner, repo), None::<&()>)
             .await
-            .context("delete repo request failed")?;
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("403") || msg.contains("Forbidden") {
+                    anyhow::anyhow!(
+                        "delete failed: token missing 'delete_repo' scope.\nRun: gh auth refresh -s delete_repo"
+                    )
+                } else {
+                    anyhow::anyhow!("delete repo failed: {}", msg)
+                }
+            })?;
         Ok(())
     }
 

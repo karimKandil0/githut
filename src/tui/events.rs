@@ -652,7 +652,7 @@ async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 app.state = AppState::SearchingCode;
             }
         }
-        KeyCode::Char('N') => {
+        KeyCode::Char('n') => {
             app.new_repo_name.clear();
             app.new_repo_desc.clear();
             app.new_repo_private = false;
