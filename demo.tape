@@ -9,9 +9,9 @@ Set Framerate 24
 Set PlaybackSpeed 0.75
 
 # launch githut
-Type "cd ~/githut && cargo run --release"
+Type "cd ~/githut && ./target/release/githut"
 Enter
-Sleep 30s
+Sleep 2s
 
 # search for neovim
 Type "/"
