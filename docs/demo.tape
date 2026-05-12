@@ -9,7 +9,7 @@ Set Framerate 24
 Set PlaybackSpeed 1.5
 
 # launch githut
-Type "githut"
+Type "~/githut/target/release/githut"
 Enter
 Sleep 2s
 
