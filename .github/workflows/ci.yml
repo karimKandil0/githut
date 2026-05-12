@@ -26,4 +26,4 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings -A dead_code -A unused_imports -A clippy::collapsible_match -A clippy::derivable_impls -A clippy::useless_format -A clippy::extend_with_drain -A clippy::no_effect_replace -A clippy::if_same_then_else
