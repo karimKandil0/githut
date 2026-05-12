@@ -1,4 +1,4 @@
-Output demo.gif
+Output docs/demo.gif
 
 Set Shell "bash"
 Set FontSize 14
@@ -8,28 +8,23 @@ Set Theme "Dracula"
 Set Framerate 24
 Set PlaybackSpeed 1.5
 
-# clean up from previous runs
-Type "rm -rf /tmp/sparse-demo /tmp/demo-file.lua"
-Enter
-Sleep 500ms
-
 # launch githut
-Type "cd ~/githut && ./target/release/githut"
+Type "githut"
 Enter
 Sleep 2s
 
 # search for neovim
 Type "/"
-Sleep 300ms
 Type "neovim"
+Sleep 200ms
 Enter
 Sleep 3s
 
 # navigate results, README auto-loads
 Down
-Sleep 600ms
+Sleep 400ms
 Down
-Sleep 600ms
+Sleep 400ms
 Down
 Sleep 1.5s
 
@@ -56,7 +51,8 @@ Down
 Sleep 300ms
 Type "c"
 Sleep 500ms
-Type "/tmp/demo-file.lua"
+Type "~/demo-file.lua"
+Sleep 200ms
 Enter
 Sleep 1.5s
 
@@ -67,10 +63,12 @@ Sleep 500ms
 # sparse clone
 Type "C"
 Sleep 500ms
-Type "/tmp/sparse-demo"
+Type "~/sparse-demo"
+Sleep 200ms
 Enter
 Sleep 500ms
 Type "runtime/lua"
+Sleep 200ms
 Enter
 Sleep 4s
 
