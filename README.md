@@ -9,6 +9,10 @@ built for headless environments, SSH sessions, and people who just prefer the te
 
 built with Rust + ratatui.
 
+> BUILT WITH THE HELP OF CLAUDE CODE (i feel like this needs to be said aloud.)
+
+
+
 ## features
 
 - search GitHub repos with live README preview (auto-loads, 300ms debounce)
@@ -142,9 +146,18 @@ gh auth login
 cargo install githut
 ```
 
-or build from source inside the nix dev shell:
+or grab a prebuilt binary from [releases](https://github.com/karimKandil0/githut/releases).
 
+## config
+
+optional config at `~/.config/githut/config.toml`:
+
+```toml
+# default path prefix for cloning repos
+# clone of foo/bar goes to ~/repos/bar
+default_clone_path = "~/repos"
 ```
-nix develop
-cargo build --release
-```
+
+## contributing
+
+see [CONTRIBUTING.md](CONTRIBUTING.md).
