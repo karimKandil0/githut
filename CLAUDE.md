@@ -251,6 +251,19 @@ Goal: browse issues/PRs for any repo, create issues, view notifications.
 - [x] ui.rs: notifications full-screen list, create issue overlay (title + body fields, Tab to switch)
 - [x] ui.rs: tab bar shows [3:Notifications] when active
 
+### Phase 7 — Code Search & Repo Creation (DONE)
+Goal: search code within a repo, create new repos from the TUI.
+
+- [x] client.rs: search_code (GET /search/code?q=...+repo:owner/name)
+- [x] client.rs: create_repo (POST /user/repos, name/description/private)
+- [x] types.rs: CodeResult struct, SearchingCode, ViewingCodeResults, CreatingRepo AppState variants
+- [x] events.rs: S key → code search within selected repo (works from Search, MyRepos, Profile)
+- [x] events.rs: SearchingCode — text input, Enter to search, Esc to back
+- [x] events.rs: ViewingCodeResults — j/k nav, l/Enter load file, J/K scroll, o browser, h/Esc back
+- [x] events.rs: N key in MyRepos → create repo overlay (name, desc, private toggle via Space, Enter to submit)
+- [x] ui.rs: code search pane (search bar + results list left, file preview right)
+- [x] ui.rs: create repo overlay (Tab between fields, focused field highlighted)
+
 ## Error Handling
 
 Use anyhow for all errors. Surface them to the user via AppState::Error(msg).
