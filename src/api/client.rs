@@ -4,8 +4,8 @@ use octocrab::Octocrab;
 use serde::Deserialize;
 
 use crate::types::{
-    EntryType, FileEntry, Issue, IssueComment, IssueFilter, Notification, RateLimit, Repo,
-    SearchResult, UserProfile,
+    CodeResult, EntryType, FileEntry, Issue, IssueComment, IssueFilter, Notification, RateLimit,
+    Repo, SearchResult, UserProfile,
 };
 
 pub struct GithubClient {
@@ -601,5 +601,79 @@ impl GithubClient {
             .await
             .context("mark all notifications read failed")?;
         Ok(())
+    }
+
+    pub async fn search_code(
+        &self,
+        query: &str,
+        owner: &str,
+        repo: &str,
+    ) -> Result<Vec<CodeResult>> {
+        #[derive(Deserialize)]
+        struct CodeSearchResponse {
+            items: Vec<CodeItem>,
+        }
+        #[derive(Deserialize)]
+        struct CodeItem {
+            path: String,
+            repository: CodeRepo,
+            html_url: String,
+            sha: String,
+        }
+        #[derive(Deserialize)]
+        struct CodeRepo {
+            full_name: String,
+        }
+
+        let q = urlencoding::encode(&format!("{}+repo:{}/{}", query, owner, repo)).into_owned();
+        let url = format!("/search/code?q={}&per_page=30", q);
+        let resp: CodeSearchResponse = self
+            .inner
+            .get(url, None::<&()>)
+            .await
+            .context("code search failed")?;
+
+        Ok(resp
+            .items
+            .into_iter()
+            .map(|item| CodeResult {
+                path: item.path,
+                repo_full_name: item.repository.full_name,
+                html_url: item.html_url,
+                sha: item.sha,
+            })
+            .collect())
+    }
+
+    pub async fn create_repo(&self, name: &str, description: &str, private: bool) -> Result<Repo> {
+        let resp: RepoItem = self
+            .inner
+            .post(
+                "/user/repos",
+                Some(&serde_json::json!({
+                    "name": name,
+                    "description": description,
+                    "private": private,
+                    "auto_init": false,
+                })),
+            )
+            .await
+            .context("create repo failed")?;
+
+        Ok(Repo {
+            id: resp.id,
+            full_name: resp.full_name,
+            name: resp.name,
+            owner: resp.owner.login,
+            description: resp.description,
+            language: resp.language,
+            stargazers_count: resp.stargazers_count,
+            forks_count: resp.forks_count,
+            html_url: resp.html_url,
+            clone_url: resp.clone_url,
+            default_branch: resp.default_branch,
+            archived: resp.archived,
+            fork: resp.fork,
+        })
     }
 }

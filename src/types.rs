@@ -40,6 +40,9 @@ pub enum AppState {
     ViewingIssue,  // reading a single issue + comments
     CreatingIssue, // composing a new issue (title input)
     ViewingNotifications,
+    SearchingCode,      // typing a code search query within a repo
+    ViewingCodeResults, // browsing code search results
+    CreatingRepo,       // new repo overlay
     Error(String),
     Help,
 }
@@ -120,6 +123,14 @@ pub struct Notification {
     pub unread: bool,
     pub updated_at: String,
     pub subject_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CodeResult {
+    pub path: String,
+    pub repo_full_name: String,
+    pub html_url: String,
+    pub sha: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

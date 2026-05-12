@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
 use crate::types::{
-    AppState, FileEntry, Issue, IssueComment, IssueFilter, IssueTab, Notification, RateLimit, Repo,
-    SparseStep, Tab, UserProfile,
+    AppState, CodeResult, FileEntry, Issue, IssueComment, IssueFilter, IssueTab, Notification,
+    RateLimit, Repo, SparseStep, Tab, UserProfile,
 };
 
 pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
@@ -82,6 +82,18 @@ pub struct App {
     pub notifications_selected: usize,
     pub notifications_loading: bool,
     pub notifications_unread_only: bool,
+    // code search
+    pub code_query: TextInput,
+    pub code_results: Vec<CodeResult>,
+    pub code_selected: usize,
+    pub code_loading: bool,
+    pub code_repo_owner: String, // repo context for current code search
+    pub code_repo_name: String,
+    // create repo
+    pub new_repo_name: TextInput,
+    pub new_repo_desc: TextInput,
+    pub new_repo_private: bool,
+    pub new_repo_focus: u8, // 0=name, 1=desc, 2=private toggle
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
@@ -142,6 +154,16 @@ impl App {
             notifications_selected: 0,
             notifications_loading: false,
             notifications_unread_only: true,
+            code_query: TextInput::new(),
+            code_results: Vec::new(),
+            code_selected: 0,
+            code_loading: false,
+            code_repo_owner: String::new(),
+            code_repo_name: String::new(),
+            new_repo_name: TextInput::new(),
+            new_repo_desc: TextInput::new(),
+            new_repo_private: false,
+            new_repo_focus: 0,
             bg_tx,
             bg_rx,
             config,

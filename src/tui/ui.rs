@@ -38,7 +38,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let left_area = panes[0];
     let right_area = panes[1];
 
-    if matches!(app.state, AppState::ViewingIssues) {
+    if matches!(
+        app.state,
+        AppState::SearchingCode | AppState::ViewingCodeResults
+    ) {
+        draw_code_search(f, app, left_area, right_area);
+    } else if matches!(app.state, AppState::ViewingIssues) {
         draw_issues_list(f, app, left_area);
         draw_issue_preview(f, app, right_area);
     } else if matches!(app.state, AppState::ViewingIssue) {
@@ -109,6 +114,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             draw_confirm_overlay(f, area, &format!("Delete {}? (y/n)", name));
         }
         AppState::CreatingIssue => draw_create_issue_overlay(f, area, app),
+        AppState::CreatingRepo => draw_create_repo_overlay(f, area, app),
         _ => {}
     }
 }
@@ -534,6 +540,7 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("J/K", "scroll readme"),
             ("l", "browse files"),
             ("i", "issues/PRs"),
+            ("S", "code search"),
             ("u", "view profile"),
             ("s", "star/unstar"),
             ("f", "fork"),
@@ -607,6 +614,21 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("Tab", "switch title/body"),
             ("Enter (title)", "go to body"),
             ("Enter (body)", "submit"),
+            ("Esc", "cancel"),
+        ],
+        AppState::SearchingCode => &[("Enter", "search"), ("Esc", "back")],
+        AppState::ViewingCodeResults => &[
+            ("j/k", "nav"),
+            ("l/Enter", "load file"),
+            ("J/K", "scroll file"),
+            ("o", "browser"),
+            ("h/Esc", "back to search"),
+            ("q", "quit"),
+        ],
+        AppState::CreatingRepo => &[
+            ("Tab", "next field"),
+            ("Space (private)", "toggle"),
+            ("Enter", "create"),
             ("Esc", "cancel"),
         ],
         AppState::Cloning | AppState::SparseCloning | AppState::FileSaving | AppState::Renaming => {
@@ -1247,6 +1269,157 @@ fn draw_create_issue_overlay(f: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(app.new_issue_body.display_with_cursor()).wrap(Wrap { trim: false }),
         layout[4],
     );
+}
+
+fn draw_code_search(f: &mut Frame, app: &mut App, left_area: Rect, right_area: Rect) {
+    // Left: search bar + results list
+    let left_split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(left_area);
+
+    let repo_label = format!("{}/{}", app.code_repo_owner, app.code_repo_name);
+    let is_searching = matches!(app.state, AppState::SearchingCode);
+    let border_style = if is_searching {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let input_text = if is_searching {
+        app.code_query.display_with_cursor()
+    } else {
+        app.code_query.as_str().to_string()
+    };
+    let search_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title(format!("Code search — {}", repo_label));
+    f.render_widget(
+        Paragraph::new(input_text).block(search_block),
+        left_split[0],
+    );
+
+    let loading_suffix = if app.code_loading {
+        " [loading...]"
+    } else {
+        ""
+    };
+    let items: Vec<ListItem> = app
+        .code_results
+        .iter()
+        .map(|r| {
+            ListItem::new(Line::from(Span::styled(
+                r.path.clone(),
+                Style::default().fg(Color::Cyan),
+            )))
+        })
+        .collect();
+    let mut state = ListState::default();
+    if !app.code_results.is_empty() {
+        state.select(Some(app.code_selected));
+    }
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(format!(
+            "Results ({}){}",
+            app.code_results.len(),
+            loading_suffix
+        )))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+    f.render_stateful_widget(list, left_split[1], &mut state);
+
+    // Right: file content
+    let selected_path = app
+        .code_results
+        .get(app.code_selected)
+        .map(|r| r.path.clone())
+        .unwrap_or_else(|| "Preview".to_string());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!("{} — press l/Enter to load", selected_path));
+    let inner = block.inner(right_area);
+    f.render_widget(block, right_area);
+
+    let text: Text = match &app.file_content {
+        Some(content) => {
+            let is_md = selected_path.ends_with(".md") || selected_path.ends_with(".markdown");
+            if is_md {
+                Text::from(markdown::render(content))
+            } else {
+                Text::raw(content.clone())
+            }
+        }
+        None => Text::from(Line::from(Span::styled(
+            if app.loading {
+                "Loading..."
+            } else {
+                "press l/Enter to load file"
+            },
+            Style::default().fg(Color::DarkGray),
+        ))),
+    };
+    f.render_widget(
+        Paragraph::new(text)
+            .wrap(Wrap { trim: false })
+            .scroll((app.file_scroll, 0)),
+        inner,
+    );
+}
+
+fn draw_create_repo_overlay(f: &mut Frame, area: Rect, app: &App) {
+    let popup = centered_rect(60, 30, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title("New Repo — Tab to switch fields, Enter to create, Esc to cancel");
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Name:
+            Constraint::Length(1), // name input
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // Description:
+            Constraint::Length(1), // desc input
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // Private:
+        ])
+        .split(inner);
+
+    let focused = |i: u8| {
+        if app.new_repo_focus == i {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
+    };
+
+    f.render_widget(Paragraph::new("Name:").style(focused(0)), layout[0]);
+    f.render_widget(
+        Paragraph::new(app.new_repo_name.display_with_cursor()),
+        layout[1],
+    );
+    f.render_widget(Paragraph::new("Description:").style(focused(1)), layout[3]);
+    f.render_widget(
+        Paragraph::new(app.new_repo_desc.display_with_cursor()),
+        layout[4],
+    );
+
+    let private_label = if app.new_repo_private {
+        "Private: [x]  (Space to toggle)"
+    } else {
+        "Private: [ ]  (Space to toggle)"
+    };
+    f.render_widget(Paragraph::new(private_label).style(focused(2)), layout[6]);
 }
 
 fn draw_input_overlay(f: &mut Frame, area: Rect, prompt: &str, input: &str) {

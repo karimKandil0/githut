@@ -48,6 +48,9 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::ViewingIssue => handle_viewing_issue(app, key.code).await,
         AppState::CreatingIssue => handle_creating_issue(app, key.code, client).await,
         AppState::ViewingNotifications => handle_viewing_notifications(app, key.code, client).await,
+        AppState::SearchingCode => handle_searching_code(app, key.code, client).await,
+        AppState::ViewingCodeResults => handle_viewing_code_results(app, key.code, client).await,
+        AppState::CreatingRepo => handle_creating_repo(app, key.code, client).await,
     }
 }
 
@@ -193,6 +196,18 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 open_issues(app, client, &owner, &name).await;
+            }
+        }
+        KeyCode::Char('S') => {
+            if let Some(repo) = app.active_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.code_repo_owner = owner;
+                app.code_repo_name = name;
+                app.code_query.clear();
+                app.code_results.clear();
+                app.code_selected = 0;
+                app.state = AppState::SearchingCode;
             }
         }
         KeyCode::Char('3') => {
@@ -625,6 +640,25 @@ async fn handle_my_repos(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 open_issues(app, client, &owner, &name).await;
             }
         }
+        KeyCode::Char('S') => {
+            if let Some(repo) = app.selected_my_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.code_repo_owner = owner;
+                app.code_repo_name = name;
+                app.code_query.clear();
+                app.code_results.clear();
+                app.code_selected = 0;
+                app.state = AppState::SearchingCode;
+            }
+        }
+        KeyCode::Char('N') => {
+            app.new_repo_name.clear();
+            app.new_repo_desc.clear();
+            app.new_repo_private = false;
+            app.new_repo_focus = 0;
+            app.state = AppState::CreatingRepo;
+        }
         KeyCode::Char('3') => {
             open_notifications(app, client).await;
         }
@@ -809,6 +843,18 @@ async fn handle_viewing_profile(
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
                 open_issues(app, client, &owner, &name).await;
+            }
+        }
+        KeyCode::Char('S') => {
+            if let Some(repo) = app.selected_profile_repo() {
+                let owner = repo.owner.clone();
+                let name = repo.name.clone();
+                app.code_repo_owner = owner;
+                app.code_repo_name = name;
+                app.code_query.clear();
+                app.code_results.clear();
+                app.code_selected = 0;
+                app.state = AppState::SearchingCode;
             }
         }
         KeyCode::Char('3') => {
@@ -1233,6 +1279,192 @@ async fn handle_viewing_notifications(
                         app.set_error(format!("failed to open browser: {}", e));
                     }
                 }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_searching_code(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = match app.tab {
+                Tab::MyRepos => AppState::MyRepos,
+                Tab::Search => AppState::Browsing,
+            };
+        }
+        KeyCode::Backspace => app.code_query.backspace(),
+        KeyCode::Delete => app.code_query.delete(),
+        KeyCode::Left => app.code_query.move_left(),
+        KeyCode::Right => app.code_query.move_right(),
+        KeyCode::Home => app.code_query.move_home(),
+        KeyCode::End => app.code_query.move_end(),
+        KeyCode::Char(c) => app.code_query.insert(c),
+        KeyCode::Enter => {
+            let q = app.code_query.as_str().trim().to_string();
+            if q.is_empty() {
+                return Ok(false);
+            }
+            let owner = app.code_repo_owner.clone();
+            let name = app.code_repo_name.clone();
+            app.code_loading = true;
+            app.code_results.clear();
+            app.code_selected = 0;
+            match client.search_code(&q, &owner, &name).await {
+                Ok(results) => {
+                    app.code_results = results;
+                    app.set_status(format!("{} results", app.code_results.len()));
+                }
+                Err(e) => app.set_error(format!("code search failed: {}", e)),
+            }
+            app.code_loading = false;
+            app.state = AppState::ViewingCodeResults;
+            app.file_content = None;
+            app.file_scroll = 0;
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_viewing_code_results(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.state = AppState::SearchingCode;
+            app.file_content = None;
+        }
+        KeyCode::Char('1') => {
+            app.tab = Tab::Search;
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            return switch_to_my_repos(app, client).await;
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if !app.code_results.is_empty() {
+                app.code_selected = (app.code_selected + 1) % app.code_results.len();
+                app.file_content = None;
+                app.file_scroll = 0;
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if !app.code_results.is_empty() {
+                if app.code_selected == 0 {
+                    app.code_selected = app.code_results.len() - 1;
+                } else {
+                    app.code_selected -= 1;
+                }
+                app.file_content = None;
+                app.file_scroll = 0;
+            }
+        }
+        KeyCode::Char('J') => {
+            app.file_scroll = app.file_scroll.saturating_add(1);
+        }
+        KeyCode::Char('K') => {
+            app.file_scroll = app.file_scroll.saturating_sub(1);
+        }
+        KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(result) = app.code_results.get(app.code_selected).cloned() {
+                let owner = app.code_repo_owner.clone();
+                let name = app.code_repo_name.clone();
+                app.loading = true;
+                match client.get_file_content(&owner, &name, &result.path).await {
+                    Ok(content) => {
+                        app.file_content = Some(content);
+                        app.file_scroll = 0;
+                    }
+                    Err(e) => app.set_error(format!("failed to load file: {}", e)),
+                }
+                app.loading = false;
+            }
+        }
+        KeyCode::Char('o') => {
+            if let Some(result) = app.code_results.get(app.code_selected) {
+                let url = result.html_url.clone();
+                if let Err(e) = open::that(&url) {
+                    app.set_error(format!("failed to open browser: {}", e));
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_creating_repo(app: &mut App, code: KeyCode, client: &GithubClient) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.state = AppState::MyRepos;
+        }
+        KeyCode::Tab => {
+            app.new_repo_focus = (app.new_repo_focus + 1) % 3;
+        }
+        KeyCode::Char(' ') if app.new_repo_focus == 2 => {
+            app.new_repo_private = !app.new_repo_private;
+        }
+        KeyCode::Backspace => match app.new_repo_focus {
+            0 => app.new_repo_name.backspace(),
+            1 => app.new_repo_desc.backspace(),
+            _ => {}
+        },
+        KeyCode::Delete => match app.new_repo_focus {
+            0 => app.new_repo_name.delete(),
+            1 => app.new_repo_desc.delete(),
+            _ => {}
+        },
+        KeyCode::Left => match app.new_repo_focus {
+            0 => app.new_repo_name.move_left(),
+            1 => app.new_repo_desc.move_left(),
+            _ => {}
+        },
+        KeyCode::Right => match app.new_repo_focus {
+            0 => app.new_repo_name.move_right(),
+            1 => app.new_repo_desc.move_right(),
+            _ => {}
+        },
+        KeyCode::Home => match app.new_repo_focus {
+            0 => app.new_repo_name.move_home(),
+            1 => app.new_repo_desc.move_home(),
+            _ => {}
+        },
+        KeyCode::End => match app.new_repo_focus {
+            0 => app.new_repo_name.move_end(),
+            1 => app.new_repo_desc.move_end(),
+            _ => {}
+        },
+        KeyCode::Char(c) => match app.new_repo_focus {
+            0 => app.new_repo_name.insert(c),
+            1 => app.new_repo_desc.insert(c),
+            _ => {}
+        },
+        KeyCode::Enter => {
+            let name = app.new_repo_name.as_str().trim().to_string();
+            if name.is_empty() {
+                app.set_error("repo name cannot be empty");
+                return Ok(false);
+            }
+            let desc = app.new_repo_desc.as_str().trim().to_string();
+            let private = app.new_repo_private;
+            match client.create_repo(&name, &desc, private).await {
+                Ok(repo) => {
+                    let full_name = repo.full_name.clone();
+                    app.my_repos.insert(0, repo);
+                    app.my_repos_selected = 0;
+                    app.set_status(format!("created {}", full_name));
+                    app.state = AppState::MyRepos;
+                }
+                Err(e) => app.set_error(format!("create repo failed: {}", e)),
             }
         }
         _ => {}
