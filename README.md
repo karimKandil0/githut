@@ -12,6 +12,7 @@ built with Rust + ratatui.
 > BUILT WITH THE HELP OF CLAUDE CODE (i feel like this needs to be said aloud.)
 
 
+
 ## features
 
 - search GitHub repos with live README preview (auto-loads, 300ms debounce)

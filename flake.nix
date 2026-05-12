@@ -35,6 +35,7 @@
             cargo-watch
             cargo-edit
             cargo-expand
+            vhs
           ];
 
           shellHook = ''
