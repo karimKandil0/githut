@@ -6,7 +6,12 @@ Set Width 1200
 Set Height 700
 Set Theme "Dracula"
 Set Framerate 24
-Set PlaybackSpeed 0.75
+Set PlaybackSpeed 1.5
+
+# clean up from previous runs
+Type "rm -rf /tmp/sparse-demo /tmp/demo-file.lua"
+Enter
+Sleep 500ms
 
 # launch githut
 Type "cd ~/githut && ./target/release/githut"
