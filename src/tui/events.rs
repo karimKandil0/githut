@@ -904,6 +904,16 @@ async fn handle_viewing_issues(
                 Tab::Search => AppState::Browsing,
             };
         }
+        KeyCode::Char('1') => {
+            app.tab = Tab::Search;
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            return switch_to_my_repos(app, client).await;
+        }
+        KeyCode::Char('3') => {
+            open_notifications(app, client).await;
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             if !app.issues.is_empty() {
                 app.issues_selected = (app.issues_selected + 1) % app.issues.len();
@@ -1158,6 +1168,13 @@ async fn handle_viewing_notifications(
                 Tab::MyRepos => AppState::MyRepos,
                 Tab::Search => AppState::Browsing,
             };
+        }
+        KeyCode::Char('1') => {
+            app.tab = Tab::Search;
+            app.state = AppState::Browsing;
+        }
+        KeyCode::Char('2') => {
+            return switch_to_my_repos(app, client).await;
         }
         KeyCode::Char('j') | KeyCode::Down => {
             if !app.notifications.is_empty() {
