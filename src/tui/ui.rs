@@ -883,17 +883,17 @@ fn draw_issues_list(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|r| r.full_name.clone())
         .unwrap_or_default();
 
-    let tab_label = match app.issue_tab {
-        IssueTab::Issues => "Issues",
-        IssueTab::PullRequests => "Pull Requests",
-    };
     let loading_suffix = if app.issues_loading {
-        " [loading...]"
+        " loading..."
     } else {
         ""
     };
+    let tab_label = match app.issue_tab {
+        IssueTab::Issues => "[Issues] PRs  ",
+        IssueTab::PullRequests => " Issues [PRs] ",
+    };
     let title = format!(
-        "{} — {} [{}] ({}){}",
+        "{}  {}  {} ({}){}",
         repo_name,
         tab_label,
         app.issue_filter.label(),
@@ -976,7 +976,10 @@ fn draw_issues_list(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_issue_preview(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Issue Preview — press l/Enter to open");
+        .title(match app.issue_tab {
+            IssueTab::Issues => "Issue Preview — l/Enter to open",
+            IssueTab::PullRequests => "PR Preview — l/Enter to open",
+        });
     let inner = block.inner(area);
     f.render_widget(block, area);
 
