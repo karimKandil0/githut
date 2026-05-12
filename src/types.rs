@@ -43,6 +43,7 @@ pub enum AppState {
     SearchingCode,      // typing a code search query within a repo
     ViewingCodeResults, // browsing code search results
     CreatingRepo,       // new repo overlay
+    ViewingFollowers,   // followers/following list on a profile
     Error(String),
     Help,
 }
@@ -81,6 +82,12 @@ pub struct UserProfile {
     pub following: u64,
     pub public_repos: u64,
     pub html_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FollowListKind {
+    Followers,
+    Following,
 }
 
 #[derive(Debug, Clone)]

@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::input::{expand_path, TextInput};
 use crate::types::{
-    AppState, CodeResult, FileEntry, Issue, IssueComment, IssueFilter, IssueTab, Notification,
-    RateLimit, Repo, SparseStep, Tab, UserProfile,
+    AppState, CodeResult, FileEntry, FollowListKind, Issue, IssueComment, IssueFilter, IssueTab,
+    Notification, RateLimit, Repo, SparseStep, Tab, UserProfile,
 };
 
 pub const LANGUAGE_CYCLE: &[Option<&str>] = &[
@@ -94,6 +94,18 @@ pub struct App {
     pub new_repo_desc: TextInput,
     pub new_repo_private: bool,
     pub new_repo_focus: u8, // 0=name, 1=desc, 2=private toggle
+    // search history & recently viewed
+    pub search_history: Vec<String>,
+    pub history_idx: Option<usize>, // None = not browsing history
+    pub recent_repos: Vec<Repo>,    // last 10 viewed
+    // fuzzy filter
+    pub fuzzy_query: String, // client-side filter on current results
+    // social — follow
+    pub following: HashSet<String>, // logins we follow
+    // followers/following list
+    pub follow_list: Vec<String>,
+    pub follow_list_selected: usize,
+    pub follow_list_kind: FollowListKind,
     // background task results
     pub bg_tx: mpsc::UnboundedSender<Result<String, String>>,
     pub bg_rx: mpsc::UnboundedReceiver<Result<String, String>>,
@@ -164,10 +176,47 @@ impl App {
             new_repo_desc: TextInput::new(),
             new_repo_private: false,
             new_repo_focus: 0,
+            search_history: crate::config::load_history(),
+            history_idx: None,
+            recent_repos: Vec::new(),
+            fuzzy_query: String::new(),
+            following: HashSet::new(),
+            follow_list: Vec::new(),
+            follow_list_selected: 0,
+            follow_list_kind: FollowListKind::Followers,
             bg_tx,
             bg_rx,
             config,
         }
+    }
+
+    /// Push a repo to recently viewed (dedup, max 10).
+    pub fn push_recent(&mut self, repo: &Repo) {
+        self.recent_repos.retain(|r| r.full_name != repo.full_name);
+        self.recent_repos.insert(0, repo.clone());
+        self.recent_repos.truncate(10);
+    }
+
+    /// Repos to display: fuzzy-filtered results, or recent if query empty.
+    pub fn displayed_results(&self) -> Vec<&Repo> {
+        if self.search_query.as_str().is_empty() && self.results.is_empty() {
+            return self.recent_repos.iter().collect();
+        }
+        if self.fuzzy_query.is_empty() {
+            return self.results.iter().collect();
+        }
+        let q = self.fuzzy_query.to_lowercase();
+        self.results
+            .iter()
+            .filter(|r| {
+                r.full_name.to_lowercase().contains(&q)
+                    || r.description
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&q)
+            })
+            .collect()
     }
 
     /// Pre-fill clone/sparse path inputs with default_clone_path from config if set.
@@ -304,7 +353,7 @@ impl App {
         }
         match self.tab {
             Tab::MyRepos => self.my_repos.get(self.my_repos_selected),
-            Tab::Search => self.results.get(self.selected),
+            Tab::Search => self.displayed_results().into_iter().nth(self.selected),
         }
     }
 

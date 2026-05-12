@@ -685,4 +685,59 @@ impl GithubClient {
             fork: resp.fork,
         })
     }
+
+    pub async fn follow_user(&self, login: &str) -> Result<()> {
+        self.inner
+            ._put(format!("/user/following/{}", login), None::<&()>)
+            .await
+            .context("follow user failed")?;
+        Ok(())
+    }
+
+    pub async fn unfollow_user(&self, login: &str) -> Result<()> {
+        self.inner
+            ._delete(format!("/user/following/{}", login), None::<&()>)
+            .await
+            .context("unfollow user failed")?;
+        Ok(())
+    }
+
+    pub async fn is_following(&self, login: &str) -> bool {
+        self.inner
+            .get::<serde_json::Value, _, _>(format!("/user/following/{}", login), None::<&()>)
+            .await
+            .is_ok()
+    }
+
+    pub async fn list_followers(&self, login: &str) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct UserItem {
+            login: String,
+        }
+        let items: Vec<UserItem> = self
+            .inner
+            .get(
+                format!("/users/{}/followers?per_page=100", login),
+                None::<&()>,
+            )
+            .await
+            .context("list followers failed")?;
+        Ok(items.into_iter().map(|u| u.login).collect())
+    }
+
+    pub async fn list_following(&self, login: &str) -> Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct UserItem {
+            login: String,
+        }
+        let items: Vec<UserItem> = self
+            .inner
+            .get(
+                format!("/users/{}/following?per_page=100", login),
+                None::<&()>,
+            )
+            .await
+            .context("list following failed")?;
+        Ok(items.into_iter().map(|u| u.login).collect())
+    }
 }

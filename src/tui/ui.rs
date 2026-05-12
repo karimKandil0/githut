@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown;
-use crate::types::{AppState, EntryType, IssueTab, SparseStep, Tab};
+use crate::types::{AppState, EntryType, FollowListKind, IssueTab, SparseStep, Tab};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -51,6 +51,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_issue_detail(f, app, right_area);
     } else if matches!(app.state, AppState::ViewingNotifications) {
         draw_notifications(f, app, main_area);
+    } else if matches!(app.state, AppState::ViewingFollowers) {
+        draw_followers_list(f, app, main_area);
     } else if matches!(app.state, AppState::FileBrowsing) {
         draw_file_browser(f, app, left_area);
         draw_file_content(f, app, right_area);
@@ -140,6 +142,12 @@ fn draw_profile_header(f: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
+    let is_following = app.following.contains(&profile.login);
+    let follow_badge = if is_following {
+        Span::styled("  [following]", Style::default().fg(Color::Green))
+    } else {
+        Span::raw("")
+    };
     let name_line = Line::from(vec![
         Span::styled(
             profile.login.clone(),
@@ -152,6 +160,7 @@ fn draw_profile_header(f: &mut Frame, app: &App, area: Rect) {
         } else {
             Span::raw("")
         },
+        follow_badge,
     ]);
 
     let stats_line = Line::from(Span::styled(
@@ -398,16 +407,31 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_results(f: &mut Frame, app: &mut App, area: Rect) {
     let loading_msg = if app.loading { " [loading...]" } else { "" };
+    let displayed = app.displayed_results();
+    let is_recent = app.search_query.as_str().is_empty() && app.results.is_empty();
+    let fuzzy_suffix = if !app.fuzzy_query.is_empty() {
+        format!(" [filter: {}]", app.fuzzy_query)
+    } else {
+        String::new()
+    };
+    let title = if is_recent {
+        format!("Recent ({}){}", displayed.len(), loading_msg)
+    } else {
+        format!(
+            "Results ({}){}{}",
+            displayed.len(),
+            fuzzy_suffix,
+            loading_msg
+        )
+    };
 
-    let title = format!("Results ({}){}", app.results.len(), loading_msg);
-
-    let items: Vec<ListItem> = app
-        .results
+    let starred = app.starred.clone();
+    let items: Vec<ListItem> = displayed
         .iter()
         .map(|repo| {
             let lang = repo.language.as_deref().unwrap_or("—");
             let stars = format_stars(repo.stargazers_count);
-            let is_starred = app.starred.contains(&repo.full_name);
+            let is_starred = starred.contains(&repo.full_name);
             let desc = repo
                 .description
                 .as_deref()
@@ -443,8 +467,8 @@ fn draw_results(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let mut state = ListState::default();
-    if !app.results.is_empty() {
-        state.select(Some(app.selected));
+    if !displayed.is_empty() {
+        state.select(Some(app.selected.min(displayed.len().saturating_sub(1))));
     }
 
     let list = List::new(items)
@@ -579,10 +603,18 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             ("J/K", "scroll readme"),
             ("l", "browse files"),
             ("u", "go to owner"),
+            ("F", "follow/unfollow"),
+            ("W", "followers list"),
+            ("E", "following list"),
             ("c", "clone"),
             ("o", "open profile"),
             ("Esc/h", "back"),
-            ("?", "help"),
+            ("q", "quit"),
+        ],
+        AppState::ViewingFollowers => &[
+            ("j/k", "nav"),
+            ("Enter/u", "open profile"),
+            ("Esc/h", "back"),
             ("q", "quit"),
         ],
         AppState::ViewingIssues => &[
@@ -1367,6 +1399,56 @@ fn draw_code_search(f: &mut Frame, app: &mut App, left_area: Rect, right_area: R
             .scroll((app.file_scroll, 0)),
         inner,
     );
+}
+
+fn draw_followers_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let login = app
+        .profile_user
+        .as_ref()
+        .map(|p| p.login.as_str())
+        .unwrap_or("user");
+    let kind_label = match app.follow_list_kind {
+        FollowListKind::Followers => "Followers",
+        FollowListKind::Following => "Following",
+    };
+    let title = format!("{} — {} ({})", login, kind_label, app.follow_list.len());
+
+    let items: Vec<ListItem> = app
+        .follow_list
+        .iter()
+        .map(|l| {
+            let is_following = app.following.contains(l);
+            let badge = if is_following {
+                Span::styled(" [following]", Style::default().fg(Color::Green))
+            } else {
+                Span::raw("")
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    l.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                badge,
+            ]))
+        })
+        .collect();
+
+    let mut state = ListState::default();
+    if !app.follow_list.is_empty() {
+        state.select(Some(app.follow_list_selected));
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_create_repo_overlay(f: &mut Frame, area: Rect, app: &App) {

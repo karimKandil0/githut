@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+const HISTORY_MAX: usize = 50;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Default local path prefix for cloning repos.
@@ -23,6 +25,52 @@ pub fn config_path() -> PathBuf {
         .join(".config")
         .join("githut")
         .join("config.toml")
+}
+
+pub fn history_path() -> PathBuf {
+    let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(base)
+        .join(".config")
+        .join("githut")
+        .join("history")
+}
+
+pub fn load_history() -> Vec<String> {
+    let path = history_path();
+    if !path.exists() {
+        return Vec::new();
+    }
+    std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect()
+}
+
+pub fn save_history(history: &[String]) {
+    let path = history_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let content = history
+        .iter()
+        .take(HISTORY_MAX)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = std::fs::write(&path, content);
+}
+
+pub fn push_history(query: &str) {
+    if query.trim().is_empty() {
+        return;
+    }
+    let mut history = load_history();
+    history.retain(|h| h != query);
+    history.insert(0, query.to_string());
+    history.truncate(HISTORY_MAX);
+    save_history(&history);
 }
 
 pub fn load() -> Result<Config> {

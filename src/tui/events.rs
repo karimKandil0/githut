@@ -51,6 +51,7 @@ pub async fn handle_events(app: &mut App, client: &GithubClient) -> Result<bool>
         AppState::SearchingCode => handle_searching_code(app, key.code, client).await,
         AppState::ViewingCodeResults => handle_viewing_code_results(app, key.code, client).await,
         AppState::CreatingRepo => handle_creating_repo(app, key.code, client).await,
+        AppState::ViewingFollowers => handle_viewing_followers(app, key.code, client).await,
     }
 }
 
@@ -73,13 +74,47 @@ async fn handle_searching(app: &mut App, client: &GithubClient, code: KeyCode) -
         KeyCode::Tab => {
             app.cycle_language();
         }
+        // Up/Down: browse search history
+        KeyCode::Up => {
+            if !app.search_history.is_empty() {
+                let new_idx = match app.history_idx {
+                    None => 0,
+                    Some(i) => (i + 1).min(app.search_history.len() - 1),
+                };
+                app.history_idx = Some(new_idx);
+                let entry = app.search_history[new_idx].clone();
+                app.search_query.clear();
+                for c in entry.chars() {
+                    app.search_query.insert(c);
+                }
+            }
+        }
+        KeyCode::Down => match app.history_idx {
+            None => {}
+            Some(0) => {
+                app.history_idx = None;
+                app.search_query.clear();
+            }
+            Some(i) => {
+                let new_idx = i - 1;
+                app.history_idx = Some(new_idx);
+                let entry = app.search_history[new_idx].clone();
+                app.search_query.clear();
+                for c in entry.chars() {
+                    app.search_query.insert(c);
+                }
+            }
+        },
         KeyCode::Backspace => app.search_query.backspace(),
         KeyCode::Delete => app.search_query.delete(),
         KeyCode::Left => app.search_query.move_left(),
         KeyCode::Right => app.search_query.move_right(),
         KeyCode::Home => app.search_query.move_home(),
         KeyCode::End => app.search_query.move_end(),
-        KeyCode::Char(c) => app.search_query.insert(c),
+        KeyCode::Char(c) => {
+            app.history_idx = None;
+            app.search_query.insert(c);
+        }
         _ => {}
     }
     Ok(false)
@@ -123,6 +158,11 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             if !app.search_query.is_empty() {
                 do_search(app, client).await;
             }
+        }
+        // Backspace on fuzzy filter
+        KeyCode::Backspace if !app.fuzzy_query.is_empty() => {
+            app.fuzzy_query.pop();
+            app.selected = 0;
         }
         KeyCode::Char('?') => {
             app.state = AppState::Help;
@@ -217,6 +257,8 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
             if let Some(repo) = app.active_repo() {
                 let owner = repo.owner.clone();
                 let name = repo.name.clone();
+                let repo_clone = repo.clone();
+                app.push_recent(&repo_clone);
                 app.file_entries.clear();
                 app.file_selected = 0;
                 app.file_path_stack.clear();
@@ -231,6 +273,11 @@ async fn handle_browsing(app: &mut App, client: &GithubClient, code: KeyCode) ->
                 }
                 app.loading = false;
             }
+        }
+        // Esc clears fuzzy filter if active, otherwise goes to searching
+        KeyCode::Esc if !app.fuzzy_query.is_empty() => {
+            app.fuzzy_query.clear();
+            app.selected = 0;
         }
         _ => {}
     }
@@ -747,10 +794,14 @@ async fn open_profile(app: &mut App, client: &GithubClient, login: &str) {
     app.readme_content = None;
     app.readme_scroll = 0;
 
-    let (profile_result, repos_result) = tokio::join!(
+    let (profile_result, repos_result, is_following) = tokio::join!(
         client.get_user_profile(login),
         client.list_user_repos(login),
+        client.is_following(login),
     );
+    if is_following {
+        app.following.insert(login.to_string());
+    }
 
     match profile_result {
         Ok(profile) => app.profile_user = Some(profile),
@@ -860,6 +911,56 @@ async fn handle_viewing_profile(
         KeyCode::Char('3') => {
             open_notifications(app, client).await;
         }
+        // F: follow/unfollow the profile user
+        KeyCode::Char('F') => {
+            if let Some(login) = app.profile_user.as_ref().map(|p| p.login.clone()) {
+                if app.following.contains(&login) {
+                    match client.unfollow_user(&login).await {
+                        Ok(()) => {
+                            app.following.remove(&login);
+                            app.set_status(format!("unfollowed {}", login));
+                        }
+                        Err(e) => app.set_error(format!("unfollow failed: {}", e)),
+                    }
+                } else {
+                    match client.follow_user(&login).await {
+                        Ok(()) => {
+                            app.following.insert(login.clone());
+                            app.set_status(format!("followed {}", login));
+                        }
+                        Err(e) => app.set_error(format!("follow failed: {}", e)),
+                    }
+                }
+            }
+        }
+        // W: view followers list
+        KeyCode::Char('W') => {
+            if let Some(login) = app.profile_user.as_ref().map(|p| p.login.clone()) {
+                match client.list_followers(&login).await {
+                    Ok(list) => {
+                        app.follow_list = list;
+                        app.follow_list_selected = 0;
+                        app.follow_list_kind = crate::types::FollowListKind::Followers;
+                        app.state = AppState::ViewingFollowers;
+                    }
+                    Err(e) => app.set_error(format!("failed to load followers: {}", e)),
+                }
+            }
+        }
+        // E: view following list
+        KeyCode::Char('E') => {
+            if let Some(login) = app.profile_user.as_ref().map(|p| p.login.clone()) {
+                match client.list_following(&login).await {
+                    Ok(list) => {
+                        app.follow_list = list;
+                        app.follow_list_selected = 0;
+                        app.follow_list_kind = crate::types::FollowListKind::Following;
+                        app.state = AppState::ViewingFollowers;
+                    }
+                    Err(e) => app.set_error(format!("failed to load following: {}", e)),
+                }
+            }
+        }
         KeyCode::Char('?') => {
             app.state = AppState::Help;
         }
@@ -869,7 +970,13 @@ async fn handle_viewing_profile(
 }
 
 async fn do_search(app: &mut App, client: &GithubClient) {
-    let query = app.search_query.as_str().to_string();
+    let raw = app.search_query.as_str().to_string();
+    // topic search: prefix with # routes to topic: qualifier
+    let query = if let Some(topic) = raw.strip_prefix('#') {
+        format!("topic:{}", topic.trim())
+    } else {
+        raw.clone()
+    };
     let lang = app.language_filter.clone();
     app.loading = true;
     app.state = AppState::Browsing;
@@ -884,8 +991,12 @@ async fn do_search(app: &mut App, client: &GithubClient) {
     match search_result {
         Ok(result) => {
             app.results = result.repos;
+            app.fuzzy_query.clear();
             app.set_status(format!("{} results", result.total_count));
             app.readme_pending = Some(Instant::now());
+            crate::config::push_history(&raw);
+            app.search_history = crate::config::load_history();
+            app.history_idx = None;
         }
         Err(e) => app.set_error(format!("search failed: {}", e)),
     }
@@ -1465,6 +1576,41 @@ async fn handle_creating_repo(app: &mut App, code: KeyCode, client: &GithubClien
                     app.state = AppState::MyRepos;
                 }
                 Err(e) => app.set_error(format!("create repo failed: {}", e)),
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_viewing_followers(
+    app: &mut App,
+    code: KeyCode,
+    client: &GithubClient,
+) -> Result<bool> {
+    match code {
+        KeyCode::Char('q') => return Ok(true),
+        KeyCode::Esc | KeyCode::Char('h') => {
+            app.state = AppState::ViewingProfile;
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if !app.follow_list.is_empty() {
+                app.follow_list_selected = (app.follow_list_selected + 1) % app.follow_list.len();
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if !app.follow_list.is_empty() {
+                if app.follow_list_selected == 0 {
+                    app.follow_list_selected = app.follow_list.len() - 1;
+                } else {
+                    app.follow_list_selected -= 1;
+                }
+            }
+        }
+        // Enter/u: open that user's profile
+        KeyCode::Enter | KeyCode::Char('u') => {
+            if let Some(login) = app.follow_list.get(app.follow_list_selected).cloned() {
+                open_profile(app, client, &login).await;
             }
         }
         _ => {}
