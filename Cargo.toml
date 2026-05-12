@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "A TUI for discovering, browsing, and acquiring GitHub repositories"
 license = "MIT"
+repository = "https://github.com/karimKandil0/githut"
+homepage = "https://github.com/karimKandil0/githut"
+keywords = ["github", "tui", "terminal", "git", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [[bin]]
 name = "githut"

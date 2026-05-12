@@ -26,6 +26,13 @@ built with Rust + ratatui.
 - **profile view** — browse any user's public repos and bio (`u` on any repo)
 - **issues & PRs** — browse, filter, create, and close issues for any repo (`i`)
 - **notifications** — view and mark GitHub notifications read (`3`)
+- **code search** — search code within any repo (`S`)
+- **create repos** — create new repos from the TUI (`n` in My Repos)
+- **topic search** — prefix query with `#` to search by topic (`#rust`, `#neovim`)
+- **search history** — Up/Down in search cycles previous queries
+- **recently viewed** — shows last 10 repos when search is empty
+- **fuzzy filter** — type in browse mode to filter current results client-side
+- **social** — follow/unfollow users (`F`), view followers/following (`W`/`E`)
 - rate limit display in status bar
 - config at `~/.config/githut/config.toml` (`default_clone_path`)
 
@@ -89,6 +96,8 @@ gh auth login
 | `R`   | rename repo                   |
 | `D`   | delete repo (confirms y/n)    |
 | `A`   | archive / unarchive           |
+| `n`   | create new repo               |
+| `S`   | code search within repo       |
 
 ### profile view (`u` on any repo)
 
@@ -96,6 +105,9 @@ gh auth login
 |-------|-------------------------------|
 | `j/k` | navigate repos                |
 | `u`   | go to that repo's owner       |
+| `F`   | follow / unfollow user        |
+| `W`   | view followers list           |
+| `E`   | view following list           |
 | `o`   | open profile in browser       |
 | `h`   | back                          |
 
