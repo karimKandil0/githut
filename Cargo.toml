@@ -32,6 +32,9 @@ serde_json = "1"
 # Git operations (clone)
 git2 = { version = "0.19", features = ["vendored-openssl"] }
 
+# Vendor OpenSSL for portable cross-platform builds (CI)
+openssl = { version = "0.10", features = ["vendored"] }
+
 # Open URLs in browser
 open = "5"
 

@@ -40,9 +40,7 @@ jobs:
 
       - name: Set cross-compile env (aarch64-linux)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "OPENSSL_NO_VENDOR=1" >> $GITHUB_ENV
+        run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
