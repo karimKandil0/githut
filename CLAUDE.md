@@ -264,6 +264,19 @@ Goal: search code within a repo, create new repos from the TUI.
 - [x] ui.rs: code search pane (search bar + results list left, file preview right)
 - [x] ui.rs: create repo overlay (Tab between fields, focused field highlighted)
 
+### Phase 8 — Discovery, QoL & Social (DONE)
+Goal: topic search, search history, recently viewed, fuzzy filter, follow/unfollow.
+
+- [x] config.rs: search history persisted to ~/.config/githut/history (max 50, deduped)
+- [x] events.rs: Up/Down in search input cycles history; any char clears history_idx
+- [x] app.rs: push_recent() tracks last 10 viewed repos; displayed when search query empty
+- [x] app.rs: fuzzy_query client-side filter on displayed_results(); Backspace in Browsing trims it, Esc clears
+- [x] events.rs: #topic prefix in search maps to topic:foo GitHub qualifier
+- [x] client.rs: follow_user, unfollow_user, is_following, list_followers, list_following
+- [x] events.rs: F on profile → follow/unfollow; W/E → followers/following list
+- [x] ui.rs: profile header shows [following] badge; followers/following full-screen list
+- [x] app.rs: status messages auto-expire after 4s (tick_status in main loop)
+
 ## Error Handling
 
 Use anyhow for all errors. Surface them to the user via AppState::Error(msg).
