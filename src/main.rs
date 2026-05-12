@@ -66,6 +66,8 @@ async fn run_app(
             break;
         }
 
+        app.tick_status();
+
         // drain background task results (clone / sparse-clone)
         while let Ok(msg) = app.bg_rx.try_recv() {
             match msg {

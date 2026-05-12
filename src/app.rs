@@ -34,6 +34,7 @@ pub struct App {
     pub readme_scroll: u16,
     pub clone_path_input: TextInput,
     pub status_msg: Option<String>,
+    pub status_set_at: Option<Instant>,
     pub loading: bool,
     // file browser
     pub file_entries: Vec<FileEntry>,
@@ -101,6 +102,7 @@ impl App {
             readme_scroll: 0,
             clone_path_input: TextInput::new(),
             status_msg: None,
+            status_set_at: None,
             loading: false,
             file_entries: Vec::new(),
             file_selected: 0,
@@ -291,10 +293,20 @@ impl App {
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
         self.status_msg = Some(msg.into());
+        self.status_set_at = Some(Instant::now());
     }
 
     pub fn clear_status(&mut self) {
         self.status_msg = None;
+        self.status_set_at = None;
+    }
+
+    pub fn tick_status(&mut self) {
+        if let Some(set_at) = self.status_set_at {
+            if set_at.elapsed().as_secs() >= 4 {
+                self.clear_status();
+            }
+        }
     }
 
     pub fn file_next(&mut self) {
