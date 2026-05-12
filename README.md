@@ -11,9 +11,6 @@ built with Rust + ratatui.
 
 > BUILT WITH THE HELP OF CLAUDE CODE (i feel like this needs to be said aloud.)
 
-![demo](demo.gif)
-
-
 
 ## features
 
