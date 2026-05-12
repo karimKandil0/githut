@@ -23,6 +23,9 @@ built with Rust + ratatui.
 - **my repos tab** — list, browse, clone your own repos
   - rename, delete, archive/unarchive
   - auto-loads your profile README on open (if `<user>/<user>` repo exists)
+- **profile view** — browse any user's public repos and bio (`u` on any repo)
+- **issues & PRs** — browse, filter, create, and close issues for any repo (`i`)
+- **notifications** — view and mark GitHub notifications read (`3`)
 - rate limit display in status bar
 - config at `~/.config/githut/config.toml` (`default_clone_path`)
 
@@ -40,28 +43,86 @@ gh auth login
 
 ## keybindings
 
+### global
+
+| key           | action                          |
+|---------------|---------------------------------|
+| `1` / `2`     | switch tabs (search / my repos) |
+| `3`           | notifications                   |
+| `?`           | help overlay                    |
+| `Esc`         | back / close overlay            |
+| `q`           | quit                            |
+
+### search & browsing
+
 | key       | action                                           |
 |-----------|--------------------------------------------------|
-| `1` / `2` | switch tabs (search / my repos)                  |
 | `/`       | focus search                                     |
 | `Enter`   | confirm search                                   |
 | `Tab`     | cycle language filter                            |
+| `r`       | refresh results                                  |
 | `j` / `k` | navigate list                                    |
-| `J` / `K` | scroll preview pane                              |
-| `l`       | open file browser / enter dir / preview file     |
-| `h`       | go up one dir; at root, back to repo list        |
-| `c`       | clone repo (browsing) / save file (file browser) |
-| `C`       | sparse clone — prompts path + dirs               |
+| `J` / `K` | scroll README preview                            |
+| `l`       | open file browser                                |
+| `u`       | view repo owner's profile                        |
+| `i`       | browse issues / PRs                              |
 | `s`       | star / unstar                                    |
 | `f`       | fork                                             |
+| `c`       | clone repo                                       |
+| `C`       | sparse clone — prompts path + dirs               |
 | `o`       | open in browser                                  |
-| `r`       | refresh results                                  |
-| `R`       | rename repo (my repos tab)                       |
-| `D`       | delete repo (my repos tab, asks y/n)             |
-| `A`       | archive / unarchive (my repos tab)               |
-| `?`       | help overlay                                     |
-| `Esc`     | back / close overlay                             |
-| `q`       | quit                                             |
+
+### file browser
+
+| key       | action                                           |
+|-----------|--------------------------------------------------|
+| `j` / `k` | navigate                                         |
+| `J` / `K` | scroll file preview                              |
+| `l`       | enter dir / preview file                         |
+| `h`       | go up one dir; at root, back to repo list        |
+| `c`       | save file to local path                          |
+
+### my repos (tab 2)
+
+| key   | action                        |
+|-------|-------------------------------|
+| `R`   | rename repo                   |
+| `D`   | delete repo (confirms y/n)    |
+| `A`   | archive / unarchive           |
+
+### profile view (`u` on any repo)
+
+| key   | action                        |
+|-------|-------------------------------|
+| `j/k` | navigate repos                |
+| `u`   | go to that repo's owner       |
+| `o`   | open profile in browser       |
+| `h`   | back                          |
+
+### issues & PRs (`i` on any repo)
+
+| key     | action                              |
+|---------|-------------------------------------|
+| `j` / `k` | navigate list                     |
+| `J` / `K` | scroll issue preview              |
+| `l`     | open issue + comments               |
+| `Tab`   | toggle issues / pull requests       |
+| `f`     | cycle filter: open → closed → all   |
+| `n`     | create new issue                    |
+| `x`     | close selected issue                |
+| `o`     | open in browser                     |
+| `h`     | back to repo list                   |
+
+### notifications (tab 3)
+
+| key   | action                        |
+|-------|-------------------------------|
+| `j/k` | navigate                      |
+| `r`   | mark selected as read         |
+| `R`   | mark all as read              |
+| `f`   | toggle unread-only filter     |
+| `o`   | open in browser               |
+| `h`   | back                          |
 
 ## install
 
